@@ -32,9 +32,34 @@
 </td>
 <td valign="middle">
 
-<img src="https://quickchart.io/chart?width=500&height=500&backgroundColor=%230d1117&c=%7B%22type%22%3A%22radar%22%2C%22data%22%3A%7B%22labels%22%3A%5B%22Agent%20%E6%9E%B6%E6%9E%84%22%2C%22Tool%20%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8%22%2C%22Memory%20%E8%AE%B0%E5%BF%86%22%2C%22Context%20%E5%B7%A5%E7%A8%8B%22%2C%22Multi-Agent%22%2C%22%E8%AF%84%E4%BC%B0%20Eval%22%5D%2C%22datasets%22%3A%5B%7B%22data%22%3A%5B80%2C85%2C72%2C88%2C60%2C68%5D%2C%22backgroundColor%22%3A%22rgba(180%2C129%2C187%2C0.25)%22%2C%22borderColor%22%3A%22%23B481BB%22%2C%22borderWidth%22%3A2%2C%22pointBackgroundColor%22%3A%22%23B481BB%22%2C%22pointRadius%22%3A4%7D%5D%7D%2C%22options%22%3A%7B%22legend%22%3A%7B%22display%22%3Afalse%7D%2C%22scale%22%3A%7B%22min%22%3A0%2C%22max%22%3A100%2C%22angleLines%22%3A%7B%22color%22%3A%22rgba(255%2C255%2C255%2C0.15)%22%7D%2C%22gridLines%22%3A%7B%22color%22%3A%22rgba(255%2C255%2C255%2C0.12)%22%7D%2C%22pointLabels%22%3A%7B%22fontColor%22%3A%22%23e6edf3%22%2C%22fontSize%22%3A13%7D%2C%22ticks%22%3A%7B%22display%22%3Afalse%2C%22min%22%3A0%2C%22max%22%3A100%7D%7D%7D%7D" width="340" alt="Agent Parameter"/>
+```text
+                                 
+              ++.+               
+           ++++ . ++++           
+        ++++   #@##  +++++       
+    ++++    ###...###### ++++    
+    ....####.   .   ....##@..    
+    +  .@... ....... .....# +    
+    +   .# .... . ....  . # +    
+    +   .## .  .o.  .   .## +    
+    +   . #.... . ....  .#  +    
+    +  ....@ ....... ....#  +    
+    .... ...##  .   ...##@...    
+    ++++    .##.....###  ++++    
+       +++++  ##..###++++        
+           ++++ @#++++           
+               +.++              
+                                 
 
-**エージェントパラメータ / AGENT PARAMETER** ・ やれやれだぜ…
+Agent 架构       # # # # # # #--- C
+Tool 工具调用      # # # # # # # # #- B
+Memory 记忆      # # # # # # #--- C
+Context 工程     # # # # # # # # #- B
+Multi-Agent    # # # # #----- D
+评估 Eval        # # # # # # #--- C
+
+AGENT PARAMETER · STAND: muyuzhong
+```
 
 </td>
 </tr>
