@@ -2,7 +2,7 @@ name: cool
 
 on:
   schedule:
-    - cron: "17 16 * * *"
+    - cron: "17 */6 * * *"
   workflow_dispatch:
 
 permissions:
