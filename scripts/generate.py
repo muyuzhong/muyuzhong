@@ -20,7 +20,7 @@ from pathlib import Path
 LOGIN = sys.argv[1] if len(sys.argv) > 1 else "muyuzhong"
 OUT = Path(__file__).resolve().parent.parent / "assets"
 
-MESSAGE = "每一次提交，都是对昨天的一次温柔否定。"
+MESSAGE = "Before the next token, everything is still possible."  # 在下一个 token 出现之前，一切都还可能。
 COMMAND = "git log --graph"
 
 W, H = 1200, 580
@@ -41,7 +41,6 @@ THEMES = {
 }
 
 MONO = "ui-monospace,'SFMono-Regular','JetBrains Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace"
-SANS = "'PingFang SC','Noto Sans SC','Noto Sans CJK SC','Source Han Sans SC','Microsoft YaHei',sans-serif"
 
 
 # ── data ──────────────────────────────────────────────────────────────
@@ -195,10 +194,11 @@ def render(theme, totals, lanes, sha, today):
         f'<text class="ln" x="100" y="176" xml:space="preserve" style="animation-delay:{out + .2:.2f}s">Date:   {date}</text>'
     )
     msg_start = out + 0.55
-    adv, msg_x = 42, 132
-    message = glyphs(MESSAGE, msg_x + adv / 2, 258, adv, "msg", msg_start, 0.07)
-    cursor = (f'<rect class="cur" x="{msg_x + len(MESSAGE) * adv + 6}" y="226" width="4" height="40" '
-              f'style="animation-delay:{msg_start + len(MESSAGE) * 0.07 + 0.1:.2f}s"/>')
+    size, msg_x, step = 31, 132, 0.045
+    adv = size * 0.6  # a monospace cell, so the message types out on the same grid as the prompt
+    message = glyphs(MESSAGE, msg_x + adv / 2, 256, adv, "msg", msg_start, step)
+    cursor = (f'<rect class="cur" x="{msg_x + len(MESSAGE) * adv + 4:.1f}" y="230" width="{adv * .55:.1f}" height="{size + 3}" '
+              f'style="animation-delay:{msg_start + len(MESSAGE) * step + 0.1:.2f}s"/>')
 
     # history: the rail drops from HEAD and turns into the main line, newest week first
     draw = out + 0.3
@@ -244,7 +244,7 @@ text{{font-family:{MONO}}}
 .ps{{font-size:16px;fill:{c["branch"]}}}
 .ty{{font-size:16px;fill:{c["fg"]};text-anchor:middle;opacity:0;animation:fade .01s linear forwards}}
 .ln{{font-size:16px;fill:{c["muted"]};opacity:0;animation:fade .35s ease forwards}}
-.msg{{font:500 38px {SANS};fill:{c["fg"]};text-anchor:middle;animation:arrive .8s cubic-bezier(.2,.7,.2,1) both}}
+.msg{{font-size:{size}px;font-weight:500;fill:{c["fg"]};text-anchor:middle;animation:arrive .25s ease-out both}}
 .cur{{fill:{c["head"]};opacity:0;animation:blink 1.06s steps(1) infinite}}
 .rail{{fill:none;stroke:url(#fadeout);stroke-width:2;stroke-dasharray:1;stroke-dashoffset:1;animation:draw 1.8s cubic-bezier(.6,0,.2,1) {draw:.2f}s forwards}}
 .br{{fill:none;stroke-width:2;stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:1;animation:draw 1s cubic-bezier(.6,0,.2,1) forwards}}
@@ -256,7 +256,7 @@ text{{font-family:{MONO}}}
 .mo{{font-size:13px;fill:{c["muted"]};text-anchor:middle;text-transform:uppercase;opacity:0;animation:fade .6s ease {tail:.2f}s forwards}}
 .ft{{font-size:15px;fill:{c["muted"]};opacity:0;animation:fade .6s ease {tail + .2:.2f}s forwards}}
 @keyframes fade{{to{{opacity:1}}}}
-@keyframes arrive{{from{{opacity:0;filter:blur(6px);transform:translateY(8px)}}to{{opacity:1;filter:blur(0);transform:none}}}}
+@keyframes arrive{{from{{opacity:0;filter:blur(3px)}}to{{opacity:1;filter:blur(0)}}}}
 @keyframes blink{{0%{{opacity:1}}50%{{opacity:0}}}}
 @keyframes draw{{to{{stroke-dashoffset:0}}}}
 @keyframes pop{{from{{transform:scale(0)}}to{{transform:scale(1)}}}}
