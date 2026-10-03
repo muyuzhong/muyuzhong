@@ -28,9 +28,21 @@ THEMES = {
     "light": dict(bg="#f2efe6", ink="#1b1f22", muted="#8c877a", ice="#2b4a5a", ember="#b4532a"),
 }
 
-# ColorBrewer RdBu, cold to hot, as used by Ed Hawkins' warming stripes.
-RDBU = ["#053061", "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#f7f7f7",
-        "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f"]
+# Thermal-camera "ironbow", from a cold empty day to the hottest one.
+IRONBOW = ["#141824", "#1f0c48", "#4b0c80", "#8d1583", "#c6305e", "#ea5f2a",
+           "#f99a1c", "#fdd25a", "#fff6d5"]
+
+AXIOMS = [
+    ("1", "世界是一切正在冷却之物的总和。"),
+    ("1.1", "余温不是热的遗物，而是冷的序言。"),
+    ("2", "语言是一种测温方式：它只读数，从不加热。"),
+    ("3", "噪声并非信号的反面，只是尚未学会沉默的信号。"),
+    ("3.1", "我等待一切静止，以便看清是什么一直在动。"),
+    ("4", "时间是熵留下的签名，我在每一次提交里临摹它。"),
+    ("5", "在绝对零度，记忆不再移动，于是它第一次成为真的。"),
+    ("6", "答案从不抵达，它只是让问题冷却到可以被握住。"),
+    ("7", ""),
+]
 
 MONO = "ui-monospace,'SFMono-Regular','JetBrains Mono',Menlo,Consolas,monospace"
 SERIF = "'Noto Serif SC','Noto Serif CJK SC','Source Han Serif SC','Songti SC','STSong','SimSun',serif"
@@ -248,6 +260,26 @@ def ramp(colors, t):
 
 # ── plates ────────────────────────────────────────────────────────────
 
+def frame(h):
+    """Ruler ticks and corner crosses shared by the themed plates."""
+    marks = []
+    for x in range(40, W - 39, 20):
+        long = (x - 40) % 100 == 0
+        for y0, sign in ((22, 1), (h - 22, -1)):
+            marks.append(f'<line x1="{x}" y1="{y0}" x2="{x}" y2="{y0 + sign * (7 if long else 3.5)}"/>')
+    for x, y in ((40, 40), (W - 40, 40), (40, h - 40), (W - 40, h - 40)):
+        marks.append(f'<path d="M{x - 6} {y}h12M{x} {y - 6}v12"/>')
+    return f'<g class="inst">{"".join(marks)}</g>'
+
+
+def glyphs(text, x, y, advance, cls, start, step):
+    """One <text> per glyph so each arrives on its own; CJK glyphs are full width, so placement is exact."""
+    return "".join(
+        f'<text class="{cls}" x="{x + i * advance:.1f}" y="{y}" style="animation-delay:{start + i * step:.2f}s">{ch}</text>'
+        for i, ch in enumerate(text)
+    )
+
+
 def isotherm_svg(theme, rings, heat, kelvin, observed, plate_no):
     c = THEMES[theme]
     n = len(rings)
@@ -257,14 +289,14 @@ def isotherm_svg(theme, rings, heat, kelvin, observed, plate_no):
         colour = mix(c["ice"], c["ember"], u ** 1.4 * heat)
         index = k % 5 == 4
         width = (1.35 if index else 0.8) - 0.3 * u
-        opacity = 0.92 - 0.5 * u
-        delay = 0.25 + k * 0.07
-        cls = "r b" if k < 3 else "r"
+        opacity = 0.95 - 0.5 * u
+        draw = 0.25 + k * 0.07
+        ripple = 3.4 + k * 0.09  # a pulse leaves the core and travels outward, ring by ring
         for pts in chains:
             paths.append(
-                f'<path class="{cls}" d="{smooth_path(densify(simplify(pts)))}" pathLength="1" '
+                f'<path class="r" d="{smooth_path(densify(simplify(pts)))}" pathLength="1" '
                 f'stroke="{colour}" stroke-width="{width:.2f}" stroke-opacity="{opacity:.2f}" '
-                f'style="animation-delay:{delay:.2f}s"/>'
+                f'style="animation-delay:{draw:.2f}s,{ripple:.2f}s"/>'
             )
         if index:
             # read the ring's value off where it crosses a ray to the upper right
@@ -274,40 +306,30 @@ def isotherm_svg(theme, rings, heat, kelvin, observed, plate_no):
                 key=lambda p: abs(math.atan2(p[1] - CY, p[0] - CX) - target),
                 default=None,
             )
-            if best and abs(math.atan2(best[1] - CY, best[0] - CX) - target) > 0.05:
-                best = None
-            if best:
-                value = kelvin * (k + 1) / n
+            if best and abs(math.atan2(best[1] - CY, best[0] - CX) - target) <= 0.05:
                 labels.append(
                     f'<text class="lbl" x="{best[0]:.1f}" y="{best[1] + 3.5:.1f}" '
-                    f'style="animation-delay:{delay + 1.6:.2f}s">{value:.2f}</text>'
+                    f'style="animation-delay:{draw + 1.6:.2f}s">{kelvin * (k + 1) / n:.2f}</text>'
                 )
 
-    ticks = []
-    for x in range(40, W - 39, 20):
-        long = (x - 40) % 100 == 0
-        for y0, sign in ((22, 1), (H - 22, -1)):
-            ticks.append(f'<line x1="{x}" y1="{y0}" x2="{x}" y2="{y0 + sign * (7 if long else 3.5)}"/>')
-    crosses = []
-    for x, y in ((40, 40), (W - 40, 40), (40, H - 40), (W - 40, H - 40)):
-        crosses.append(f'<path d="M{x - 6} {y}h12M{x} {y - 6}v12"/>')
-
+    adv = 54
     line1, line2 = KOAN
+    koan = (glyphs(line1, CX - (len(line1) - 1) * adv / 2, CY - 14, adv, "k", 1.3, 0.11)
+            + glyphs(line2, CX - (len(line2) - 1) * adv / 2, CY + 48, adv, "k", 1.3 + len(line1) * 0.11 + 0.2, 0.11))
     return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" role="img" aria-labelledby="t d">
 <title id="t">{line1}，{line2}。</title>
 <desc id="d">Isotherms around a quiet core. T = {kelvin:.2f} K, observed {observed}.</desc>
 <style>
-.r{{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1;animation:draw 2.8s cubic-bezier(.65,0,.25,1) forwards}}
-.b{{animation:draw 2.8s cubic-bezier(.65,0,.25,1) forwards,breathe 7s ease-in-out 4s infinite alternate}}
-.lbl{{font:500 10px {MONO};fill:{c["muted"]};text-anchor:middle;paint-order:stroke;stroke:{c["bg"]};stroke-width:5px;opacity:0;animation:fade 1.2s ease forwards}}
-.koan{{font:400 40px {SERIF};fill:{c["ink"]};text-anchor:middle;letter-spacing:.32em;opacity:0;filter:blur(7px);animation:condense 2.6s cubic-bezier(.2,.6,.2,1) 1.1s forwards}}
-.meta{{font:500 11px {MONO};fill:{c["muted"]};letter-spacing:.14em;opacity:0;animation:fade 1.4s ease 2.6s forwards}}
+.r{{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1;animation:draw 2.8s cubic-bezier(.65,0,.25,1) forwards,ripple 6.5s ease-in-out infinite both}}
+.lbl{{font:500 11px {MONO};fill:{c["muted"]};text-anchor:middle;paint-order:stroke;stroke:{c["bg"]};stroke-width:5px;opacity:0;animation:fade 1.2s ease forwards}}
+.k{{font:400 40px {SERIF};fill:{c["ink"]};text-anchor:middle;animation:arrive 1.6s cubic-bezier(.2,.6,.2,1) both}}
+.meta{{font:500 12.5px {MONO};fill:{c["muted"]};letter-spacing:.14em;opacity:0;animation:fade 1.4s ease 3s forwards}}
 .inst{{stroke:{c["muted"]};stroke-width:1;fill:none;opacity:.55}}
 @keyframes draw{{to{{stroke-dashoffset:0}}}}
-@keyframes breathe{{from{{stroke-opacity:.9}}to{{stroke-opacity:.25}}}}
+@keyframes ripple{{0%,22%,100%{{opacity:.5}}9%{{opacity:1}}}}
 @keyframes fade{{to{{opacity:1}}}}
-@keyframes condense{{to{{opacity:1;filter:blur(0)}}}}
-@media (prefers-reduced-motion:reduce){{.r,.b{{animation:none;stroke-dashoffset:0}}.lbl,.koan,.meta{{animation:none;opacity:1;filter:none}}}}
+@keyframes arrive{{from{{opacity:0;filter:blur(9px);transform:translateY(10px)}}to{{opacity:1;filter:blur(0);transform:none}}}}
+@media (prefers-reduced-motion:reduce){{.r{{animation:none;stroke-dashoffset:0}}.lbl,.k,.meta{{animation:none;opacity:1;filter:none}}}}
 </style>
 <defs>
 <radialGradient id="v" cx="50%" cy="50%" r="62%"><stop offset=".55" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
@@ -318,9 +340,8 @@ def isotherm_svg(theme, rings, heat, kelvin, observed, plate_no):
 <rect width="{W}" height="{H}" fill="{c["bg"]}"/>
 <g mask="url(#m)">{"".join(paths)}</g>
 <g>{"".join(labels)}</g>
-<g class="inst">{"".join(ticks)}{"".join(crosses)}</g>
-<text class="koan" x="{CX}" y="{CY - 14}">{line1}</text>
-<text class="koan" x="{CX}" y="{CY + 48}">{line2}</text>
+{frame(H)}
+{koan}
 <text class="meta" x="56" y="66">T = {kelvin:.2f} K</text>
 <text class="meta" x="{W - 56}" y="66" text-anchor="end">dS ≥ δQ / T</text>
 <text class="meta" x="56" y="{H - 56}">OBS · {observed}</text>
@@ -330,29 +351,167 @@ def isotherm_svg(theme, rings, heat, kelvin, observed, plate_no):
 """
 
 
-def stripes_svg(weekly):
-    sw, sh = W / len(weekly), 84
-    top = max(max(weekly), 60)
-    colours = [ramp(RDBU, math.log1p(v) / math.log1p(top)) for v in weekly]
-    bars, k = [], 0
-    while k < len(colours):
-        # merge equal neighbours so long silences do not show anti-aliasing seams
-        run = 1
-        while k + run < len(colours) and colours[k + run] == colours[k]:
-            run += 1
-        bars.append(
-            f'<rect x="{k * sw:.2f}" width="{run * sw + 0.6:.2f}" height="{sh}" fill="{colours[k]}" '
-            f'style="animation-delay:{k * 0.028:.3f}s"/>'
+def thermal_svg(weeks, kelvin, observed):
+    """The contribution calendar seen through an infrared camera."""
+    h, pitch, size = 380, 18.6, 14.2
+    x0, y0 = 92, 112
+    days = [d for w in weeks for d in w]
+    top = max(n for _, n in days) or 1
+    flicker = random.Random(days[-1][0])
+    cells, glow, starts = [], [], []
+    where = {}
+    for col, week in enumerate(weeks):
+        delay = 0.6 + col * 0.032
+        month = dt.date.fromisoformat(week[-1][0]).month
+        if not starts or starts[-1][1] != month:
+            starts.append((col, month))
+        for date, n in week:
+            row = (dt.date.fromisoformat(date).weekday() + 1) % 7  # Sunday first, as GitHub draws it
+            x, y = x0 + col * pitch, y0 + row * pitch
+            where[date] = (x + size / 2, y + size / 2)
+            t = math.log1p(n) / math.log1p(top)
+            colour = ramp(IRONBOW, t)
+            cells.append(f'<rect class="c" x="{x:.1f}" y="{y:.1f}" width="{size}" height="{size}" rx="3" '
+                         f'fill="{colour}" style="animation-delay:{delay:.2f}s"/>')
+            if n:
+                # the heat haze shows first, then the sweep brings the grid into focus; each warm cell shimmers on its own clock
+                glow.append(f'<circle class="c f" cx="{x + size / 2:.1f}" cy="{y + size / 2:.1f}" r="{8 + 18 * t:.1f}" '
+                            f'fill="{colour}" style="animation-delay:{flicker.uniform(0.1, 0.5):.2f}s,{flicker.uniform(1.5, 5):.2f}s;'
+                            f'animation-duration:.9s,{flicker.uniform(2.2, 4.8):.2f}s"/>')
+    months = "".join(
+        f'<text class="mo" x="{x0 + col * pitch:.1f}" y="{y0 + 7 * pitch + 16:.1f}">'
+        f'{dt.date(2000, month, 1).strftime("%b").upper()}</text>'
+        for (col, month), nxt in zip(starts, starts[1:] + [(len(weeks) + 3, 0)])
+        if nxt[0] - col >= 3
+    )
+    sweep_end = 0.6 + len(weeks) * 0.032
+    grid_w, grid_h = len(weeks) * pitch, 7 * pitch - (pitch - size)
+
+    def lock(date, label, cls, delay, above):
+        """Corner brackets on a cell, with a leader out of the grid to its reading."""
+        cx, cy = where[date]
+        r, arm = 13, 5
+        corners = "".join(
+            f'M{cx + sx * r:.1f} {cy + sy * (r - arm):.1f}V{cy + sy * r:.1f}H{cx + sx * (r - arm):.1f}'
+            for sx in (-1, 1) for sy in (-1, 1)
         )
-        k += run
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {sh}" width="{W}" height="{sh}" role="img" aria-label="{len(weekly)} weeks, coldest blue to warmest red">
+        ly = y0 - 22 if above else y0 + grid_h + 40
+        leader = f'M{cx:.1f} {cy + (-r if above else r):.1f}V{ly + (4 if above else -12):.1f}'
+        anchor = "end" if cx > x0 + grid_w - 160 else "start"
+        tx = cx + 6 if anchor == "start" else cx - 6
+        return (f'<g class="{cls}" style="animation-delay:{delay:.2f}s">'
+                f'<path d="{corners}{leader}"/><text x="{tx:.1f}" y="{ly:.1f}" text-anchor="{anchor}">{label}</text></g>')
+
+    hot_date, hot_n = max(days, key=lambda d: d[1])
+    today, today_n = days[-1]
+    locks = lock(hot_date, f"MAX {hot_n} · {hot_date[5:]}", "lock hot", sweep_end + 0.2, True)
+    if today != hot_date:
+        locks += lock(today, f"SP1 {today_n} · NOW", "lock now", sweep_end + 0.7, False)
+
+    sx = x0 + grid_w + 26
+    scale = "".join(f'<stop offset="{k / (len(IRONBOW) - 1):.3f}" stop-color="{col}"/>' for k, col in enumerate(reversed(IRONBOW)))
+    total = sum(n for _, n in days)
+    vf = "".join(  # viewfinder corners
+        f'<path d="M{x} {y + sy * 18}V{y}H{x + sx_ * 18}"/>'
+        for x, y, sx_, sy in ((44, 44, 1, 1), (W - 44, 44, -1, 1), (44, h - 44, 1, -1), (W - 44, h - 44, -1, -1))
+    )
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {h}" width="{W}" height="{h}" role="img" aria-labelledby="t">
+<title id="t">过去一年的贡献，透过红外相机观察。共 {total} 次，最热的一天是 {hot_date}（{hot_n}）。</title>
 <style>
-rect{{opacity:0;animation:in .9s ease forwards}}
-@keyframes in{{to{{opacity:1}}}}
-@media (prefers-reduced-motion:reduce){{rect{{animation:none;opacity:1}}}}
+text{{font:500 13px {MONO};fill:#6b7380;letter-spacing:.12em}}
+.c{{opacity:0;animation:fade .5s ease forwards}}
+.f{{animation-name:fade,shimmer;animation-timing-function:ease,ease-in-out;animation-iteration-count:1,infinite;animation-direction:normal,alternate;animation-fill-mode:forwards,none}}
+.mo{{font-size:11.5px;fill:#4f5661}}
+.ui{{opacity:0;animation:fade 1s ease 2.6s forwards}}
+.rec{{fill:#ff3b30;animation:blink 1.4s steps(1) infinite}}
+.lock{{opacity:0;fill:none;stroke-width:1.4;animation:fade .4s ease forwards,pulse 2.4s ease-in-out infinite}}
+.lock text{{stroke:none;font-size:12.5px}}
+.lock path{{stroke-width:1.2}}
+.hot{{stroke:#fdd25a}}.hot text{{fill:#fdd25a}}
+.now{{stroke:#8ec5d6}}.now text{{fill:#8ec5d6}}
+@keyframes fade{{to{{opacity:1}}}}
+@keyframes blink{{0%{{opacity:1}}50%{{opacity:.15}}}}
+@keyframes pulse{{50%{{stroke-opacity:.35}}}}
+@keyframes shimmer{{from{{opacity:1}}to{{opacity:.55}}}}
+@media (prefers-reduced-motion:reduce){{.c,.ui,.lock{{animation:none;opacity:1}}.rec{{animation:none}}.sweep,.scan{{display:none}}}}
 </style>
-<clipPath id="c"><rect width="{W}" height="{sh}" rx="10" style="opacity:1;animation:none"/></clipPath>
-<g clip-path="url(#c)">{"".join(bars)}</g>
+<defs>
+<filter id="bloom" x="-20%" y="-60%" width="140%" height="220%"><feGaussianBlur stdDeviation="11"/></filter>
+<linearGradient id="scale" x1="0" y1="0" x2="0" y2="1">{scale}</linearGradient>
+<linearGradient id="beam" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".85" stop-color="#fff" stop-opacity=".07"/><stop offset="1" stop-color="#fff" stop-opacity=".85"/></linearGradient>
+<linearGradient id="band" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".045"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<pattern id="lines" width="4" height="4" patternUnits="userSpaceOnUse"><rect width="4" height="1" fill="#fff" fill-opacity=".022"/></pattern>
+<radialGradient id="vig" cx="50%" cy="50%" r="75%"><stop offset=".6" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".55"/></radialGradient>
+<clipPath id="clip"><rect width="{W}" height="{h}" rx="18"/></clipPath>
+</defs>
+<g clip-path="url(#clip)">
+<rect width="{W}" height="{h}" fill="#07080c"/>
+<g filter="url(#bloom)">{"".join(glow)}</g>
+<g>{"".join(cells)}</g>
+{months}
+<rect class="sweep" x="{x0 - 40}" y="{y0 - 14}" width="40" height="{grid_h + 28:.1f}" fill="url(#beam)" opacity="0">
+<animate attributeName="x" from="{x0 - 40}" to="{x0 + grid_w - 20:.0f}" begin=".6s" dur="{sweep_end - 0.6:.2f}s" fill="freeze"/>
+<animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.05;.92;1" begin=".6s" dur="{sweep_end - 0.6:.2f}s" fill="freeze"/>
+</rect>
+{locks}
+<rect width="{W}" height="{h}" fill="url(#lines)"/>
+<rect class="scan" y="-60" width="{W}" height="60" fill="url(#band)"><animate attributeName="y" from="-60" to="{h}" dur="5.5s" repeatCount="indefinite"/></rect>
+<rect width="{W}" height="{h}" fill="url(#vig)"/>
+<g fill="none" stroke="#3a414c" stroke-width="1.2">{vf}</g>
+<circle class="rec" cx="68" cy="66" r="4"/>
+<text x="80" y="70" style="fill:#c9ccd1">REC</text>
+<g class="ui">
+<text x="128" y="70">IR · {len(weeks)}W × 7D</text>
+<text x="{CX}" y="70" text-anchor="middle">ε 0.98 · λ 8–14 µm</text>
+<text x="{W - 68}" y="70" text-anchor="end">{observed}</text>
+<rect x="{sx:.1f}" y="{y0}" width="8" height="{grid_h:.1f}" rx="2" fill="url(#scale)"/>
+<text x="{sx + 16:.1f}" y="{y0 + 8}" style="font-size:11.5px">{top}</text>
+<text x="{sx + 16:.1f}" y="{y0 + grid_h:.1f}" style="font-size:11.5px">0</text>
+<text x="68" y="{h - 60}">Σ {total:,} / 365 D</text>
+<text x="{W - 68}" y="{h - 60}" text-anchor="end">T(7D) {kelvin:.2f} K</text>
+</g>
+</g>
+</svg>
+"""
+
+
+def axioms_svg(theme):
+    c = THEMES[theme]
+    size, adv, lh, top = 21, 25, 38, 112
+    h = top + (len(AXIOMS) - 1) * lh + 86
+    widest = max(len(text) for _, text in AXIOMS) * adv
+    left = CX - widest / 2 + 30  # first glyph's left edge; numbers hang in the margin
+    lines, t = [], 0.5
+    for k, (num, text) in enumerate(AXIOMS):
+        y = top + k * lh
+        lines.append(f'<text class="n" x="{left - 28:.1f}" y="{y}" style="animation-delay:{t:.2f}s">{num}</text>')
+        if text:
+            lines.append(glyphs(text, left + adv / 2, y, adv, "g", t + 0.15, 0.022))
+            t += 0.15 + len(text) * 0.022 + 0.3
+        else:  # 7 is left unsaid
+            lines.append(f'<rect class="cur" x="{left:.1f}" y="{y - size + 3}" width="10" height="{size}" '
+                         f'style="animation-delay:{t + 0.5:.2f}s"/>')
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {h}" width="{W}" height="{h}" role="img" aria-labelledby="t">
+<title id="t">{"  ".join(f"{num} {text}" for num, text in AXIOMS if text)}  7</title>
+<style>
+.g{{font:400 {size}px {SERIF};fill:{c["ink"]};text-anchor:middle;animation:arrive .7s ease both}}
+.n{{font:500 13px {MONO};fill:{c["muted"]};text-anchor:end;letter-spacing:.08em;animation:fade .6s ease both}}
+.cur{{fill:{c["ice"]};opacity:0;animation:blink 1.1s steps(1) infinite}}
+.meta{{font:500 12.5px {MONO};fill:{c["muted"]};letter-spacing:.14em}}
+.inst{{stroke:{c["muted"]};stroke-width:1;fill:none;opacity:.55}}
+@keyframes arrive{{from{{opacity:0;filter:blur(4px);transform:translateY(5px)}}to{{opacity:1;filter:blur(0);transform:none}}}}
+@keyframes fade{{from{{opacity:0}}to{{opacity:1}}}}
+@keyframes blink{{0%{{opacity:1}}50%{{opacity:0}}}}
+@media (prefers-reduced-motion:reduce){{.g,.n{{animation:none}}.cur{{animation:none;opacity:1}}}}
+</style>
+<clipPath id="c"><rect width="{W}" height="{h}" rx="18"/></clipPath>
+<g clip-path="url(#c)">
+<rect width="{W}" height="{h}" fill="{c["bg"]}"/>
+{frame(h)}
+<text class="meta" x="56" y="66">PROPOSITIONS</text>
+<text class="meta" x="{W - 56}" y="66" text-anchor="end">1 — 7</text>
+{"".join(lines)}
+</g>
 </svg>
 """
 
@@ -384,9 +543,9 @@ def main():
     for theme in THEMES:
         svg = isotherm_svg(theme, rings, heat, kelvin, today.isoformat(), f"{year}·{week:02d}")
         (OUT / f"isotherm-{theme}.svg").write_text(svg, encoding="utf-8")
-    weekly = [sum(n for _, n in w) for w in weeks]
-    (OUT / "stripes.svg").write_text(stripes_svg(weekly), encoding="utf-8")
-    print(f"T = {kelvin:.2f} K  heat = {heat:.2f}  rings = {len(rings)}  weeks = {len(weekly)}")
+        (OUT / f"axioms-{theme}.svg").write_text(axioms_svg(theme), encoding="utf-8")
+    (OUT / "thermal.svg").write_text(thermal_svg(weeks, kelvin, today.isoformat()), encoding="utf-8")
+    print(f"T = {kelvin:.2f} K  heat = {heat:.2f}  rings = {len(rings)}  weeks = {len(weeks)}")
 
 
 if __name__ == "__main__":
