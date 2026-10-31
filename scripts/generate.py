@@ -153,7 +153,7 @@ def render_hero(theme):
     chips = ["TypeScript", "Python", "Rust", "Swift", "Astro"]
     chip_svg, x = [], 64
     for i, name in enumerate(chips):
-        w = len(name) * 7.6 + 26
+        w = len(name) * 8.4 + 30
         chip_svg.append(
             f'<g class="rise" style="animation-delay:{0.7 + i * 0.07:.2f}s">'
             f'<rect x="{x:.1f}" y="236" width="{w:.1f}" height="30" rx="15" fill="{c["card"]}" stroke="{c["border"]}"/>'
@@ -177,30 +177,33 @@ def render_hero(theme):
 
     css = f"""
 .rise{{animation:rise .7s cubic-bezier(.2,.8,.2,1) both}}
-.b1{{animation:d1 14s ease-in-out infinite alternate}}
-.b2{{animation:d2 17s ease-in-out infinite alternate}}
-.b3{{animation:d3 19s ease-in-out infinite alternate}}
-@keyframes d1{{to{{transform:translate(90px,40px)}}}}
-@keyframes d2{{to{{transform:translate(-110px,-30px)}}}}
-@keyframes d3{{to{{transform:translate(-60px,50px)}}}}
+.w1{{animation:slide 7s linear infinite}}
+.w2{{animation:slide 11s linear infinite reverse}}
+.w3{{animation:slide 5s linear infinite}}
+@keyframes slide{{to{{transform:translateX(-240px)}}}}
+.float{{animation:float 5s ease-in-out infinite}}
+@keyframes float{{50%{{transform:translateY(-7px)}}}}
 .dot{{animation:ping 2.4s ease-out infinite;transform-box:fill-box;transform-origin:center}}
 @keyframes ping{{0%{{opacity:.7;transform:scale(1)}}100%{{opacity:0;transform:scale(3)}}}}
 .cur{{animation:blink 1.1s steps(1) infinite}}
 @keyframes blink{{50%{{opacity:0}}}}
 """
+    def wave(y, amp, period, colour, cls, opacity):
+        d = f"M{-period} {y}"
+        for i in range(int((W + 2 * period) / (period / 2)) + 1):
+            d += f" Q{-period + period / 4 + i * period / 2:.0f} {y + (-amp if i % 2 == 0 else amp)} {-period + (i + 1) * period / 2:.0f} {y}"
+        return f'<path class="{cls}" d="{d}" fill="none" stroke="{colour}" stroke-width="2.5" stroke-linecap="round" opacity="{opacity}"/>'
+
+    waves = (wave(288, 9, 240, c["a1"], "w1", .55) + wave(298, 7, 320, c["a2"], "w2", .5)
+             + wave(308, 6, 200, c["a3"], "w3", .45))
     body = f"""<defs>
   <clipPath id="clip"><rect width="{W}" height="{H}" rx="22"/></clipPath>
-  <radialGradient id="g1"><stop offset="0" stop-color="{c["a1"]}" stop-opacity="{c["blob"]}"/><stop offset="1" stop-color="{c["a1"]}" stop-opacity="0"/></radialGradient>
-  <radialGradient id="g2"><stop offset="0" stop-color="{c["a2"]}" stop-opacity="{c["blob"]}"/><stop offset="1" stop-color="{c["a2"]}" stop-opacity="0"/></radialGradient>
-  <radialGradient id="g3"><stop offset="0" stop-color="{c["a3"]}" stop-opacity="{c["blob"] * 0.8:.2f}"/><stop offset="1" stop-color="{c["a3"]}" stop-opacity="0"/></radialGradient>
   <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.1" fill="{c["dots"]}"/></pattern>
 </defs>
 <g clip-path="url(#clip)">
   <rect width="{W}" height="{H}" fill="{c["bg"]}"/>
   <rect width="{W}" height="{H}" fill="url(#dots)" opacity=".7"/>
-  <circle class="b1" cx="250" cy="90" r="300" fill="url(#g1)"/>
-  <circle class="b2" cx="1000" cy="260" r="320" fill="url(#g2)"/>
-  <circle class="b3" cx="620" cy="360" r="260" fill="url(#g3)"/>
+  {waves}
 </g>
 <rect x=".5" y=".5" width="{W - 1}" height="{H - 1}" rx="21.5" fill="none" stroke="{c["border"]}"/>
 
@@ -214,14 +217,14 @@ def render_hero(theme):
 <text class="rise" x="64" y="218" font-size="15" fill="{c["muted"]}" style="animation-delay:.35s">AI 即生产力，创造力即一切</text>
 {"".join(chip_svg)}
 
-<g class="rise" style="animation-delay:.3s">
+<g class="float"><g class="rise" style="animation-delay:.3s">
   <rect x="720" y="40" width="416" height="240" rx="14" fill="{c["card"]}" stroke="{c["border"]}"/>
   <circle cx="744" cy="62" r="5.5" fill="#ff5f57"/><circle cx="764" cy="62" r="5.5" fill="#febc2e"/><circle cx="784" cy="62" r="5.5" fill="#28c840"/>
   <text class="m" x="928" y="66" font-size="12" text-anchor="middle" fill="{c["muted"]}">me.ts</text>
   <line x1="721" y1="82" x2="1135" y2="82" stroke="{c["border"]}"/>
 </g>
 {"".join(lines)}
-<rect class="cur" x="{752 + 2 * 11:.0f}" y="{128 + 5 * 30 - 15}" width="9" height="19" fill="{c["a1"]}" transform="translate(0 0)"/>"""
+<rect class="cur" x="{752 + 2 * 11:.0f}" y="{128 + 5 * 30 - 15}" width="9" height="19" fill="{c["a1"]}" transform="translate(0 0)"/></g>"""
     return frame(c, W, H, body, css, f"{NAME} — AI is the velocity; creativity is the vector.",
                  f"{NAME}'s profile banner: AI is the velocity, creativity is the vector.")
 
@@ -265,7 +268,7 @@ def render_stats(theme, weeks, languages, today):
             dow = (dt.date.fromisoformat(date).weekday() + 1) % 7  # Sunday-first like GitHub
             lv = level(n)
             cells.append(f'<rect class="c" x="{x0 + col * pitch}" y="{y0 + dow * pitch}" width="{cell}" height="{cell}" '
-                         f'rx="4" fill="{c["heat"][lv]}" style="animation-delay:{col * 0.014:.3f}s"><title>{date}: {n}</title></rect>')
+                         f'rx="4" fill="{c["heat"][lv]}" style="animation-delay:{col * 0.014:.3f}s,{-(col * 0.11 + dow * 0.07):.2f}s"><title>{date}: {n}</title></rect>')
     days = "".join(f'<text x="40" y="{y0 + r * pitch + 12}" font-size="11" fill="{c["muted"]}">{n}</text>'
                    for r, n in ((1, "Mon"), (3, "Wed"), (5, "Fri")))
     ly = y0 + 7 * pitch + 6
@@ -296,7 +299,8 @@ def render_stats(theme, weeks, languages, today):
 
     css = f"""
 .rise{{animation:rise .6s cubic-bezier(.2,.8,.2,1) both}}
-.c{{animation:fade .5s ease both}}
+.c{{animation:fade .5s ease both,wave 3.2s ease-in-out infinite}}
+@keyframes wave{{0%,100%{{transform:translateY(0)}}50%{{transform:translateY(-6px)}}}}
 .bar{{animation:grow 1.2s cubic-bezier(.2,.8,.2,1) .4s both;transform-origin:{bx}px 0}}
 @keyframes grow{{from{{transform:scaleX(0)}}to{{transform:scaleX(1)}}}}
 """

@@ -12,31 +12,6 @@
 
 </div>
 
-## ✦ Projects
-
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <a href="https://github.com/muyuzhong/boardcast"><b>boardcast</b></a> <sub>TypeScript</sub><br>
-      Talk, and the whiteboard draws itself. 本地优先的实时会议图表，支持 Linux / Windows ARM / macOS。
-    </td>
-    <td width="50%" valign="top">
-      <a href="https://github.com/muyuzhong/rea"><b>rea</b></a> <sub>TypeScript</sub><br>
-      Reverse engineer anything with agents, from app behavior down to native binaries.
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <a href="https://github.com/muyuzhong/Featherlog"><b>Featherlog</b></a> <sub>TypeScript · ★ 4</sub><br>
-      <!-- TODO: 一句话介绍 -->
-    </td>
-    <td width="50%" valign="top">
-      <a href="https://github.com/muyuzhong/LowTemp"><b>LowTemp</b></a> <sub>TypeScript · ★ 4</sub><br>
-      <!-- TODO: 一句话介绍 -->
-    </td>
-  </tr>
-</table>
-
 ## ✦ Activity
 
 <picture>
