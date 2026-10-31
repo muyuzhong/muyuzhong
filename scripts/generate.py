@@ -188,16 +188,23 @@ def render_hero():
         rows.append(f'<text class="m rise" xml:space="preserve" x="48" y="{112 + r * lh}" font-size="{fs}" textLength="{len(line) * cw:.0f}" '
                     f'fill="{ACCENT}" style="animation-delay:{0.15 + r * 0.12:.2f}s">{line}</text>')
 
-    # signal field: a static character ramp whose brightness ripples across the grid
+    # signal field: a dense character ramp that ripples quickly; a hidden word flashes white now and then
     ramp = "·:-=+*#%@"
-    x0, y0, cols, nrows, lh2 = 800, 70, 44, 14, 18
+    x0, y0, cols, nrows, lh2, cw2 = 796, 70, 51, 17, 14, 7.2
+    secret = "CREATOR"
+    glyphs = [" ".join(NAME_FONT[ch][r] for ch in secret) for r in range(5)]
+    off_c, off_r = (cols - len(glyphs[0])) // 2, (nrows - 10) // 2  # each glyph row spans two field rows
     field = []
     for r in range(nrows):
         for k in range(cols):
             v = (math.sin(k * 0.34 + r * 0.55) + math.sin(k * 0.11 - r * 0.3) + 2) / 4
             ch = ramp[min(int(v * len(ramp)), len(ramp) - 1)]
-            field.append(f'<text class="m f p{(k * 3 + r) % 16}" x="{x0 + k * CW:.1f}" y="{y0 + r * lh2}" '
-                         f'fill="{ACCENT}" fill-opacity="{0.25 + 0.75 * v:.2f}">{ch}</text>')
+            gr, gc = r - off_r, k - off_c
+            hidden = 0 <= gr < 10 and 0 <= gc < len(glyphs[0]) and glyphs[gr // 2][gc] == "█"
+            if hidden:
+                ch, v = "#", 0.7  # dense glyphs so the word is legible when it lights up
+            field.append(f'<text class="m f{" h" if hidden else ""} p{(k * 2 + r) % 18}" x="{x0 + k * cw2:.1f}" y="{y0 + r * lh2}" '
+                         f'font-size="12" fill="{ACCENT}" fill-opacity="{0.25 + 0.75 * v:.2f}"{" font-weight=\"700\"" if hidden else ""}>{ch}</text>')
 
     line_a, end_a = typed('$ echo "AI is the velocity; creativity is the vector."', 48, 266, 1.0, FG)
     line_a = line_a.replace('<tspan class="t" style="animation-delay:1.00s">$', f'<tspan class="t" fill="{ACCENT}" style="animation-delay:1.00s">$', 1)
@@ -207,9 +214,11 @@ def render_hero():
     chips_svg = (f'<text class="m rise" x="48" y="318" font-size="13" fill="{DIM}" style="animation-delay:.9s">{chips}</text>')
 
     css = """
-.f{animation:shimmer 3.2s ease-in-out infinite}
-@keyframes shimmer{0%,100%{opacity:.3}50%{opacity:1}}
-""" + "".join(f".p{i}{{animation-delay:-{i * 0.2:.1f}s}}" for i in range(16)) + f"""
+.f{animation:shimmer 1.5s ease-in-out infinite}
+@keyframes shimmer{0%,100%{opacity:.25}50%{opacity:1}}
+.h{animation:shimmer 1.5s ease-in-out infinite,reveal 10s ease-in-out infinite}
+@keyframes reveal{0%,62%{fill:#4ade80}70%,88%{fill:#ffffff}96%,100%{fill:#4ade80}}
+""" + "".join(f".p{i}{{animation-delay:-{i * 0.0833:.3f}s}}" for i in range(18)) + f"""
 .cur{{animation:appear .01s both,blink 1.1s steps(1) infinite}}
 .scan{{animation:scan 7s linear infinite}}
 @keyframes scan{{from{{transform:translateY(0)}}to{{transform:translateY({H}px)}}}}
@@ -218,7 +227,7 @@ def render_hero():
             f'<g clip-path="url(#c)"><rect class="scan" y="-4" width="{W}" height="3" fill="{ACCENT}" opacity=".10"/></g>'
             + border(f"{NAME}@github", "● online", H)
             + "".join(rows) + "".join(field)
-            + f'<text class="m" x="{x0}" y="{y0 - 14}" font-size="12" fill="{DIM}">// signal</text>'
+            + f'<text class="m" x="{x0}" y="{y0 - 14}" font-size="12" fill="{DIM}">// signal<tspan fill="{FAINT}"> · decode me</tspan></text>'
             + line_a + line_b + chips_svg)
     return svg(H, f"{NAME} — AI is the velocity; creativity is the vector.",
                f"ASCII terminal banner for {NAME}: AI is the velocity, creativity is the vector.", css, body)

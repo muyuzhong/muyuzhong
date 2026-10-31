@@ -1,4 +1,4 @@
-<img alt="cheathero — AI is the velocity; creativity is the vector." src="assets/hero.svg?v=4" width="100%">
+<img alt="cheathero — AI is the velocity; creativity is the vector." src="assets/hero.svg?v=5" width="100%">
 
 <div align="center">
 
@@ -7,4 +7,4 @@
 
 </div>
 
-<img alt="GitHub contribution heatmap, streaks and language mix" src="assets/stats.svg?v=4" width="100%">
+<img alt="GitHub contribution heatmap, streaks and language mix" src="assets/stats.svg?v=5" width="100%">
