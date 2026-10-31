@@ -1,7 +1,7 @@
-"""Render the profile banner and live contribution stats as theme-aware SVGs.
+"""Render the profile as an animated ASCII-terminal banner plus live contribution stats.
 
-Outputs (assets/): hero-{dark,light}.svg  — animated intro banner
-                   stats-{dark,light}.svg — heatmap, streaks and language mix from real GitHub data
+Outputs (assets/): hero.svg  — typed, glowing ASCII intro
+                   stats.svg — character heatmap, streaks and language bars from real GitHub data
 
 Usage: GITHUB_TOKEN=... python scripts/generate.py [login]
 Only the standard library is used, so the workflow needs no install step.
@@ -9,6 +9,7 @@ Only the standard library is used, so the workflow needs no install step.
 
 import datetime as dt
 import json
+import math
 import os
 import sys
 import time
@@ -19,29 +20,6 @@ LOGIN = sys.argv[1] if len(sys.argv) > 1 else "muyuzhong"
 NAME = "cheathero"
 OUT = Path(__file__).resolve().parent.parent / "assets"
 SKIP_LANGS = {"CSS", "HTML", "Shell", "Dockerfile"}
-
-THEMES = {
-    "dark": dict(
-        bg="#0d1117", card="#151b23", border="#2a313c", fg="#f0f6fc", sub="#9da7b3", muted="#6e7681",
-        a1="#8b7cf6", a2="#2dd4bf", a3="#f472b6", blob=0.30, dots="#30363d",
-        heat=["#1b212b", "#35307f", "#5146d1", "#7c6ff2", "#b8aeff"],
-    ),
-    "light": dict(
-        bg="#ffffff", card="#f6f8fa", border="#d8dee4", fg="#1f2328", sub="#59636e", muted="#818b98",
-        a1="#6d4aff", a2="#0d9488", a3="#db2777", blob=0.22, dots="#d0d7de",
-        heat=["#eceef2", "#d3ccfb", "#a99af5", "#7b5cf0", "#4f2fd0"],
-    ),
-}
-
-SANS = "-apple-system,BlinkMacSystemFont,'Segoe UI','Inter','PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif"
-MONO = "ui-monospace,'SFMono-Regular','JetBrains Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace"
-
-LANG_COLORS = {
-    "TypeScript": "#3178c6", "JavaScript": "#f1e05a", "Python": "#3572a5", "Rust": "#dea584",
-    "Swift": "#f05138", "Astro": "#ff5a03", "Go": "#00add8", "Java": "#b07219", "C": "#8a8a8a",
-    "C++": "#f34b7d", "Kotlin": "#a97bff", "Vue": "#41b883", "Svelte": "#ff3e00", "Ruby": "#cc342d",
-}
-FALLBACK = ["#8b7cf6", "#2dd4bf", "#f472b6", "#fbbf24", "#60a5fa", "#fb923c"]
 
 
 # ── data ──────────────────────────────────────────────────────────────
@@ -126,20 +104,73 @@ def levels(counts):
     return lambda n: 0 if n == 0 else 1 + sum(n > t for t in q)
 
 
-# ── shared chrome ─────────────────────────────────────────────────────
+# ── ASCII terminal chrome ─────────────────────────────────────────────
 
-def frame(c, w, h, body, css, title, desc):
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" width="{w}" height="{h}" role="img" aria-labelledby="t d">
+BG, FG, DIM, FAINT = "#0a0c0a", "#e8ece8", "#7d867d", "#2b322b"
+ACCENT = "#4ade80"  # the single accent colour
+MONO = "ui-monospace,'SFMono-Regular','JetBrains Mono',Menlo,Consolas,'DejaVu Sans Mono','Noto Sans Mono CJK SC',monospace"
+CW = 8.4            # advance of one 14px monospace cell; textLength pins rows to it regardless of the viewer's font
+W = 1200
+COLS = 139          # characters in one full-width border row
+
+NAME_FONT = {  # 5x5 block letters
+    "C": ["█████", "█    ", "█    ", "█    ", "█████"],
+    "H": ["█   █", "█   █", "█████", "█   █", "█   █"],
+    "E": ["█████", "█    ", "████ ", "█    ", "█████"],
+    "A": [" ███ ", "█   █", "█████", "█   █", "█   █"],
+    "T": ["█████", "  █  ", "  █  ", "  █  ", "  █  "],
+    "R": ["████ ", "█   █", "████ ", "█  █ ", "█   █"],
+    "O": [" ███ ", "█   █", "█   █", "█   █", " ███ "],
+}
+
+
+def esc(t):
+    return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def border(title, right, h):
+    """Box-drawing frame: title/status sit in the top rule, vertical rules are drawn per row."""
+    left = f"┌─[ {title} ]"
+    status = f"[ {right} ]─┐"
+    fill = "─" * (COLS - len(left) - len(status))
+    pulse_status = esc(status).replace("●", f'<tspan class="pulse" fill="{ACCENT}">●</tspan>')
+    top = (f'<text class="m" x="14" y="22" textLength="{COLS * CW:.0f}" fill="{FAINT}">'
+           f'{esc(left[:3])}<tspan fill="{ACCENT}">{esc(left[3:])}</tspan>{fill}'
+           f'<tspan fill="{DIM}">{pulse_status}</tspan></text>')
+    bottom = f'<text class="m" x="14" y="{h - 12}" textLength="{COLS * CW:.0f}" fill="{FAINT}">└{"─" * (COLS - 2)}┘</text>'
+    sides = "".join(
+        f'<text class="m" x="14" y="{y}" fill="{FAINT}">│</text><text class="m" x="{14 + (COLS - 1) * CW:.1f}" y="{y}" fill="{FAINT}">│</text>'
+        for y in range(44, h - 20, 20))
+    return top + bottom + sides
+
+
+def typed(text, x, y, start, fill, step=0.03, size=15, extra=""):
+    """One <text> whose characters appear one by one. Returns (svg, end_time)."""
+    chars = "".join(f'<tspan class="t" style="animation-delay:{start + i * step:.2f}s">{esc(ch)}</tspan>'
+                    for i, ch in enumerate(text))
+    return (f'<text class="m" xml:space="preserve" x="{x}" y="{y}" font-size="{size}" fill="{fill}">{chars}{extra}</text>',
+            start + len(text) * step)
+
+
+BASE_CSS = f"""
+text{{font-family:{MONO}}}
+.m{{white-space:pre}}
+.t{{animation:appear .01s both}}
+@keyframes appear{{from{{opacity:0}}to{{opacity:1}}}}
+@keyframes blink{{0%,49%{{opacity:1}}50%,100%{{opacity:0}}}}
+@keyframes rise{{from{{opacity:0;transform:translateY(10px)}}to{{opacity:1;transform:none}}}}
+.rise{{animation:rise .6s cubic-bezier(.2,.8,.2,1) both}}
+.pulse{{animation:blink 1.6s steps(1) infinite}}
+@media (prefers-reduced-motion:reduce){{*{{animation:none!important}}}}
+"""
+
+
+def svg(h, title, desc, css, body):
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" font-size="14" viewBox="0 0 {W} {h}" width="{W}" height="{h}" role="img" aria-labelledby="t d">
 <title id="t">{title}</title>
 <desc id="d">{desc}</desc>
-<style>
-text{{font-family:{SANS}}}
-.m{{font-family:{MONO}}}
-@keyframes fade{{from{{opacity:0}}to{{opacity:1}}}}
-@keyframes rise{{from{{opacity:0;transform:translateY(8px)}}to{{opacity:1;transform:none}}}}
-{css}
-@media (prefers-reduced-motion:reduce){{*{{animation:none!important}}}}
-</style>
+<style>{BASE_CSS}{css}</style>
+<rect width="{W}" height="{h}" rx="14" fill="{BG}"/>
 {body}
 </svg>
 """
@@ -147,178 +178,145 @@ text{{font-family:{SANS}}}
 
 # ── hero ──────────────────────────────────────────────────────────────
 
-def render_hero(theme):
-    c = THEMES[theme]
-    W, H = 1200, 320
-    chips = ["TypeScript", "Python", "Rust", "Swift", "Astro"]
-    chip_svg, x = [], 64
-    for i, name in enumerate(chips):
-        w = len(name) * 8.4 + 30
-        chip_svg.append(
-            f'<g class="rise" style="animation-delay:{0.7 + i * 0.07:.2f}s">'
-            f'<rect x="{x:.1f}" y="236" width="{w:.1f}" height="30" rx="15" fill="{c["card"]}" stroke="{c["border"]}"/>'
-            f'<circle cx="{x + 14:.1f}" cy="251" r="3.5" fill="{LANG_COLORS.get(name, c["a1"])}"/>'
-            f'<text x="{x + 24:.1f}" y="256" font-size="13" font-weight="500" fill="{c["sub"]}">{name}</text></g>')
-        x += w + 10
+def render_hero():
+    H = 340
+    fs, cw, lh = 22, 13.2, 25
+    word = NAME.upper()
+    rows = []
+    for r in range(5):
+        line = " ".join(NAME_FONT[ch][r] for ch in word)
+        rows.append(f'<text class="m rise" xml:space="preserve" x="48" y="{112 + r * lh}" font-size="{fs}" textLength="{len(line) * cw:.0f}" '
+                    f'fill="{ACCENT}" style="animation-delay:{0.15 + r * 0.12:.2f}s">{line}</text>')
 
-    code = [  # (indent, [(text, colour)])
-        (0, [("const ", c["a3"]), (NAME, c["fg"]), (" = {", c["muted"])]),
-        (1, [("lever", c["a2"]), (": ", c["muted"]), ('"AI"', c["a1"]), (",", c["muted"])]),
-        (1, [("vector", c["a2"]), (": ", c["muted"]), ('"creativity"', c["a1"]), (",", c["muted"])]),
-        (1, [("ships", c["a2"]), (": ", c["muted"]), ('["boardcast", "rea"]', c["a1"]), (",", c["muted"])]),
-        (1, [("shipping", c["a2"]), (": ", c["muted"]), ("true", c["a3"]), (",", c["muted"])]),
-        (0, [("};", c["muted"])]),
-    ]
-    lines = []
-    for i, (indent, parts) in enumerate(code):
-        spans = "".join(f'<tspan fill="{col}">{t.replace("&", "&amp;")}</tspan>' for t, col in parts)
-        lines.append(f'<text class="m rise" xml:space="preserve" x="{752 + indent * 22}" y="{122 + i * 29}" font-size="17" '
-                     f'style="animation-delay:{0.5 + i * 0.18:.2f}s">{spans}</text>')
+    # signal field: a static character ramp whose brightness ripples across the grid
+    ramp = "·:-=+*#%@"
+    x0, y0, cols, nrows, lh2 = 800, 70, 44, 14, 18
+    field = []
+    for r in range(nrows):
+        for k in range(cols):
+            v = (math.sin(k * 0.34 + r * 0.55) + math.sin(k * 0.11 - r * 0.3) + 2) / 4
+            ch = ramp[min(int(v * len(ramp)), len(ramp) - 1)]
+            field.append(f'<text class="m f p{(k * 3 + r) % 16}" x="{x0 + k * CW:.1f}" y="{y0 + r * lh2}" '
+                         f'fill="{ACCENT}" fill-opacity="{0.25 + 0.75 * v:.2f}">{ch}</text>')
 
-    css = f"""
-.rise{{animation:rise .7s cubic-bezier(.2,.8,.2,1) both}}
-.w1{{animation:slide 7s linear infinite}}
-.w2{{animation:slide 11s linear infinite reverse}}
-.w3{{animation:slide 5s linear infinite}}
-@keyframes slide{{to{{transform:translateX(-240px)}}}}
-.float{{animation:float 5s ease-in-out infinite}}
-@keyframes float{{50%{{transform:translateY(-7px)}}}}
-.dot{{animation:ping 2.4s ease-out infinite;transform-box:fill-box;transform-origin:center}}
-@keyframes ping{{0%{{opacity:.7;transform:scale(1)}}100%{{opacity:0;transform:scale(3)}}}}
-.cur{{animation:blink 1.1s steps(1) infinite}}
-@keyframes blink{{50%{{opacity:0}}}}
+    line_a, end_a = typed('$ echo "AI is the velocity; creativity is the vector."', 48, 266, 1.0, FG)
+    line_a = line_a.replace('<tspan class="t" style="animation-delay:1.00s">$', f'<tspan class="t" fill="{ACCENT}" style="animation-delay:1.00s">$', 1)
+    line_b, end_b = typed("> AI 即生产力，创造力即一切", 48, 292, end_a + 0.2, DIM, 0.06,
+                          extra=f'<tspan class="cur" style="animation-delay:{end_a + 0.2 + 15 * 0.06:.2f}s" fill="{ACCENT}"> █</tspan>')
+    chips = "  ".join(f'[{n}]' for n in ("TypeScript", "Python", "Rust", "Swift", "Astro"))
+    chips_svg = (f'<text class="m rise" x="48" y="318" font-size="13" fill="{DIM}" style="animation-delay:.9s">{chips}</text>')
+
+    css = """
+.f{animation:shimmer 3.2s ease-in-out infinite}
+@keyframes shimmer{0%,100%{opacity:.3}50%{opacity:1}}
+""" + "".join(f".p{i}{{animation-delay:-{i * 0.2:.1f}s}}" for i in range(16)) + f"""
+.cur{{animation:appear .01s both,blink 1.1s steps(1) infinite}}
+.scan{{animation:scan 7s linear infinite}}
+@keyframes scan{{from{{transform:translateY(0)}}to{{transform:translateY({H}px)}}}}
 """
-    def wave(y, amp, period, colour, cls, opacity):
-        d = f"M{-period} {y}"
-        for i in range(int((W + 2 * period) / (period / 2)) + 1):
-            d += f" Q{-period + period / 4 + i * period / 2:.0f} {y + (-amp if i % 2 == 0 else amp)} {-period + (i + 1) * period / 2:.0f} {y}"
-        return f'<path class="{cls}" d="{d}" fill="none" stroke="{colour}" stroke-width="3" stroke-linecap="round" opacity="{opacity}"/>'
-
-    waves = (wave(286, 11, 240, c["a1"], "w1", .55) + wave(298, 9, 320, c["a2"], "w2", .5)
-             + wave(309, 7, 200, c["a3"], "w3", .45))
-    body = f"""<defs>
-  <clipPath id="clip"><rect width="{W}" height="{H}" rx="22"/></clipPath>
-  <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.1" fill="{c["dots"]}"/></pattern>
-</defs>
-<g clip-path="url(#clip)">
-  <rect width="{W}" height="{H}" fill="{c["bg"]}"/>
-  <rect width="{W}" height="{H}" fill="url(#dots)" opacity=".7"/>
-  {waves}
-</g>
-<rect x=".5" y=".5" width="{W - 1}" height="{H - 1}" rx="21.5" fill="none" stroke="{c["border"]}"/>
-
-<g class="rise">
-  <rect x="64" y="46" width="132" height="28" rx="14" fill="{c["card"]}" stroke="{c["border"]}"/>
-  <circle cx="82" cy="60" r="4" fill="{c["a2"]}"/><circle class="dot" cx="82" cy="60" r="4" fill="{c["a2"]}"/>
-  <text x="94" y="65" font-size="12" font-weight="600" letter-spacing="1.4" fill="{c["sub"]}">HELLO, WORLD</text>
-</g>
-<text class="rise" x="60" y="152" font-size="86" font-weight="800" letter-spacing="-2.5" fill="{c["fg"]}" style="animation-delay:.1s">{NAME}<tspan fill="{c["a1"]}">.</tspan></text>
-<text class="rise" x="64" y="192" font-size="23" fill="{c["sub"]}" style="animation-delay:.25s">AI is the <tspan font-weight="700" fill="{c["fg"]}">velocity</tspan>. Creativity is the <tspan font-weight="700" fill="{c["fg"]}">vector</tspan>.</text>
-<text class="rise" x="64" y="218" font-size="15" fill="{c["muted"]}" style="animation-delay:.35s">AI 即生产力，创造力即一切</text>
-{"".join(chip_svg)}
-
-<g class="float"><g class="rise" style="animation-delay:.3s">
-  <rect x="720" y="40" width="416" height="240" rx="14" fill="{c["card"]}" stroke="{c["border"]}"/>
-  <circle cx="744" cy="62" r="5.5" fill="#ff5f57"/><circle cx="764" cy="62" r="5.5" fill="#febc2e"/><circle cx="784" cy="62" r="5.5" fill="#28c840"/>
-  <text class="m" x="928" y="66" font-size="12" text-anchor="middle" fill="{c["muted"]}">me.ts</text>
-  <line x1="721" y1="82" x2="1135" y2="82" stroke="{c["border"]}"/>
-</g>
-{"".join(lines)}
-<rect class="cur" x="{752 + 2 * 11:.0f}" y="{122 + 5 * 29 - 15}" width="9" height="19" fill="{c["a1"]}" transform="translate(0 0)"/></g>"""
-    return frame(c, W, H, body, css, f"{NAME} — AI is the velocity; creativity is the vector.",
-                 f"{NAME}'s profile banner: AI is the velocity, creativity is the vector.")
+    body = (f'<defs><clipPath id="c"><rect width="{W}" height="{H}" rx="14"/></clipPath></defs>'
+            f'<g clip-path="url(#c)"><rect class="scan" y="-4" width="{W}" height="3" fill="{ACCENT}" opacity=".10"/></g>'
+            + border(f"{NAME}@github", "● online", H)
+            + "".join(rows) + "".join(field)
+            + f'<text class="m" x="{x0}" y="{y0 - 14}" font-size="12" fill="{DIM}">// signal</text>'
+            + line_a + line_b + chips_svg)
+    return svg(H, f"{NAME} — AI is the velocity; creativity is the vector.",
+               f"ASCII terminal banner for {NAME}: AI is the velocity, creativity is the vector.", css, body)
 
 
 # ── stats ─────────────────────────────────────────────────────────────
 
-def render_stats(theme, weeks, languages, today):
-    c = THEMES[theme]
-    W = 1200
+def streaks(days):
+    """days: chronological list of counts. Returns (longest, current); an empty today does not break the current streak."""
+    longest = run = 0
+    for n in days:
+        run = run + 1 if n else 0
+        longest = max(longest, run)
+    tail = days[:-1] if days and days[-1] == 0 else days
+    current = 0
+    for n in reversed(tail):
+        if not n:
+            break
+        current += 1
+    return longest, current
+
+
+def levels(counts):
+    nonzero = sorted(n for n in counts if n)
+    if not nonzero:
+        return lambda n: 0
+    q = [nonzero[int(len(nonzero) * p)] for p in (0.25, 0.5, 0.75)]
+    return lambda n: 0 if n == 0 else 1 + sum(n > t for t in q)
+
+
+def render_stats(weeks, languages, today):
     flat = [n for w in weeks for _, n in w]
-    total = sum(flat)
-    active = sum(1 for n in flat if n)
+    total, active = sum(flat), sum(1 for n in flat if n)
     longest, current = streaks(flat)
     level = levels(flat)
 
-    tiles = [("Contributions", f"{total:,}", "last 12 months", c["a1"]),
-             ("Active days", f"{active}", f"of {len(flat)} days", c["a2"]),
-             ("Longest streak", f"{longest}", "days in a row", c["a3"]),
-             ("Current streak", f"{current}", "days", c["a1"])]
-    tw, gap = 268, 16
+    tiles = [("CONTRIBUTIONS", f"{total:,}", "past year"), ("ACTIVE DAYS", f"{active}", f"/ {len(flat)}"),
+             ("LONGEST STREAK", f"{longest}", "days"), ("CURRENT STREAK", f"{current}", "days")]
     tile_svg = []
-    for i, (label, value, note, col) in enumerate(tiles):
-        x = 40 + i * (tw + gap)
+    for i, (label, value, unit) in enumerate(tiles):
+        x = 48 + i * 280
+        if i:
+            tile_svg.append(f'<text class="m" x="{x - 24}" y="96" fill="{FAINT}">│</text><text class="m" x="{x - 24}" y="116" fill="{FAINT}">│</text><text class="m" x="{x - 24}" y="136" fill="{FAINT}">│</text>')
         tile_svg.append(
-            f'<g class="rise" style="animation-delay:{i * 0.08:.2f}s">'
-            f'<rect x="{x}" y="72" width="{tw}" height="96" rx="14" fill="{c["card"]}" stroke="{c["border"]}"/>'
-            f'<rect x="{x + 20}" y="86" width="22" height="4" rx="2" fill="{col}"/>'
-            f'<text x="{x + 20}" y="124" font-size="34" font-weight="800" fill="{c["fg"]}">{value}</text>'
-            f'<text x="{x + 20 + 14 + len(value) * 20:.0f}" y="124" font-size="13" fill="{c["muted"]}">{note}</text>'
-            f'<text x="{x + 20}" y="152" font-size="13" font-weight="600" fill="{c["sub"]}">{label}</text></g>')
+            f'<g class="rise" style="animation-delay:{i * 0.1:.1f}s">'
+            f'<text class="m" x="{x}" y="86" font-size="12" fill="{DIM}">{label}</text>'
+            f'<text class="m" x="{x}" y="128" font-size="38" font-weight="700" fill="{ACCENT}">{value}</text>'
+            f'<text class="m" x="{x + len(value) * 23 + 10}" y="128" font-size="13" fill="{DIM}">{unit}</text></g>')
 
-    # heatmap
-    x0, y0, pitch, cell = 74, 224, 20, 16
-    cells, months, last_col = [], [], -9
+    x0, y0, pitch = 76, 196, 20
+    glyph = ["·", "░░", "▒▒", "▓▓", "██"]
+    opacity = [1, 0.35, 0.55, 0.78, 1]
+    cells, months, last = [], [], -9
     for col, week in enumerate(weeks):
         d0 = dt.date.fromisoformat(week[0][0])
-        if (col == 0 or d0.month != dt.date.fromisoformat(weeks[col - 1][0][0]).month) and col - last_col >= 3:
-            months.append(f'<text x="{x0 + col * pitch}" y="{y0 - 12}" font-size="12" fill="{c["muted"]}">{d0:%b}</text>')
-            last_col = col
-        for row, (date, n) in enumerate(week):
-            dow = (dt.date.fromisoformat(date).weekday() + 1) % 7  # Sunday-first like GitHub
+        if (col == 0 or d0.month != dt.date.fromisoformat(weeks[col - 1][0][0]).month) and col - last >= 3:
+            months.append(f'<text class="m" x="{x0 + col * pitch - 8}" y="{y0 - 14}" font-size="12" fill="{DIM}">{d0:%b}</text>')
+            last = col
+        for date, n in week:
+            dow = (dt.date.fromisoformat(date).weekday() + 1) % 7
             lv = level(n)
-            cells.append(f'<rect class="c" x="{x0 + col * pitch}" y="{y0 + dow * pitch}" width="{cell}" height="{cell}" '
-                         f'rx="4" fill="{c["heat"][lv]}" style="animation-delay:{col * 0.014:.3f}s,{-(col * 0.11 + dow * 0.07):.2f}s"><title>{date}: {n}</title></rect>')
-    days = "".join(f'<text x="40" y="{y0 + r * pitch + 12}" font-size="11" fill="{c["muted"]}">{n}</text>'
+            fill = FAINT if lv == 0 else ACCENT
+            cells.append(f'<text class="m c" x="{x0 + col * pitch}" y="{y0 + dow * pitch + 14}" font-size="14" text-anchor="middle" '
+                         f'fill="{fill}" fill-opacity="{opacity[lv]}" style="animation-delay:{col * 0.012:.3f}s,{-(col * 0.11 + dow * 0.07):.2f}s">'
+                         f'{glyph[lv]}<title>{date}: {n}</title></text>')
+    days = "".join(f'<text class="m" x="48" y="{y0 + r * pitch + 14}" font-size="12" fill="{DIM}">{n}</text>'
                    for r, n in ((1, "Mon"), (3, "Wed"), (5, "Fri")))
-    ly = y0 + 7 * pitch + 6
-    legend = "".join(f'<rect x="{1040 + i * 20}" y="{ly}" width="14" height="14" rx="4" fill="{col}"/>'
-                     for i, col in enumerate(c["heat"]))
-    legend += (f'<text x="{1040 - 8}" y="{ly + 11}" font-size="12" text-anchor="end" fill="{c["muted"]}">Less</text>'
-               f'<text x="{1040 + 5 * 20 + 6}" y="{ly + 11}" font-size="12" fill="{c["muted"]}">More</text>')
+    ly = y0 + 7 * pitch + 22
+    legend = (f'<text class="m" x="{W - 48}" y="{ly}" font-size="12" text-anchor="end" fill="{DIM}">less '
+              + "".join(f'<tspan fill="{FAINT if i == 0 else ACCENT}" fill-opacity="{opacity[i]}" font-size="14">{glyph[i]}</tspan>' for i in range(5))
+              + " more</text>")
 
-    # language mix
     all_total = sum(languages.values()) or 1
     langs = [kv for kv in sorted(languages.items(), key=lambda kv: -kv[1])[:6] if kv[1] / all_total >= 0.01]
     lang_total = sum(n for _, n in langs) or 1
-    by = ly + 54
-    bar_w, bx, seg = W - 80, 40, []
-    leg, cursor = [], 0.0
-    step = (W - 80) / max(len(langs), 1)
+    by = ly + 46
+    BAR = 56
+    rows = [f'<text class="m" x="48" y="{by - 14}" font-size="12" fill="{DIM}">// languages</text>']
     for i, (name, n) in enumerate(langs):
-        col = LANG_COLORS.get(name, FALLBACK[i % len(FALLBACK)])
         share = n / lang_total
-        w = bar_w * share
-        seg.append(f'<rect x="{bx + cursor:.1f}" y="{by}" width="{max(w - 3, 2):.1f}" height="12" fill="{col}"/>')
-        cursor += w
-        lx = 40 + i * step
-        leg.append(f'<circle cx="{lx + 5:.0f}" cy="{by + 40}" r="5" fill="{col}"/>'
-                   f'<text x="{lx + 18:.0f}" y="{by + 45}" font-size="14" font-weight="600" fill="{c["fg"]}">{name}'
-                   f'<tspan dx="7" font-weight="400" fill="{c["muted"]}">{share * 100:.1f}%</tspan></text>')
-    H = by + 76
+        filled = max(1, round(BAR * share))
+        y = by + 14 + i * 26
+        bar = "".join(f'<tspan class="t" fill="{ACCENT}" style="animation-delay:{0.5 + i * 0.12 + k * 0.012:.2f}s">█</tspan>' for k in range(filled))
+        rows.append(f'<text class="m" x="48" y="{y}" font-size="15" fill="{FG}">{esc(name.lower())}</text>'
+                    f'<text class="m" x="190" y="{y}" font-size="15" textLength="{BAR * 9:.0f}" fill="{FAINT}">{"░" * BAR}</text>'
+                    f'<text class="m" x="190" y="{y}" font-size="15" textLength="{filled * 9}" lengthAdjust="spacing" xml:space="preserve">{bar}</text>'
+                    f'<text class="m" x="{190 + BAR * 9 + 20}" y="{y}" font-size="15" fill="{DIM}">{share * 100:5.1f}%</text>')
+    H = by + 14 + len(langs) * 26 + 34
 
     css = f"""
-.rise{{animation:rise .6s cubic-bezier(.2,.8,.2,1) both}}
-.c{{animation:fade .5s ease both,wave 3.2s ease-in-out infinite}}
+.c{{animation:appear .3s ease both,wave 3.2s ease-in-out infinite}}
 @keyframes wave{{0%,100%{{transform:translateY(0)}}50%{{transform:translateY(-6px)}}}}
-.bar{{animation:grow 1.2s cubic-bezier(.2,.8,.2,1) .4s both;transform-origin:{bx}px 0}}
-@keyframes grow{{from{{transform:scaleX(0)}}to{{transform:scaleX(1)}}}}
 """
-    body = f"""<defs><clipPath id="bar"><rect x="{bx}" y="{by}" width="{bar_w}" height="12" rx="6"/></clipPath></defs>
-<rect width="{W}" height="{H}" rx="22" fill="{c["bg"]}"/>
-<rect x=".5" y=".5" width="{W - 1}" height="{H - 1}" rx="21.5" fill="none" stroke="{c["border"]}"/>
-<text x="40" y="46" font-size="13" font-weight="700" letter-spacing="1.6" fill="{c["sub"]}">ACTIVITY</text>
-<text x="{W - 40}" y="46" font-size="12" text-anchor="end" fill="{c["muted"]}">updated {today:%Y-%m-%d} · live from GitHub</text>
-{"".join(tile_svg)}
-{"".join(months)}{days}
-{"".join(cells)}
-{legend}
-<text x="40" y="{by - 16}" font-size="13" font-weight="700" letter-spacing="1.6" fill="{c["sub"]}">LANGUAGES</text>
-<rect x="{bx}" y="{by}" width="{bar_w}" height="12" rx="6" fill="{c["card"]}"/>
-<g clip-path="url(#bar)"><g class="bar">{"".join(seg)}</g></g>
-{"".join(leg)}"""
-    return frame(c, W, H, body, css, f"{NAME}'s GitHub activity",
-                 f"{total:,} contributions across {active} active days; longest streak {longest} days.")
+    footer = f'<text class="m" x="48" y="{H - 30}" font-size="13" fill="{DIM}">&gt; updated {today:%Y-%m-%d} · before the next token, creativity writes the first prompt.</text>'
+    body = (border("activity", f"live · {today:%Y-%m-%d}", H) + "".join(tile_svg) + "".join(months) + days
+            + "".join(cells) + legend + "".join(rows) + footer)
+    return svg(H, f"{NAME}'s GitHub activity",
+               f"{total:,} contributions across {active} active days; longest streak {longest} days.", css, body)
 
 
 # ── main ──────────────────────────────────────────────────────────────
@@ -340,9 +338,8 @@ def main():
     OUT.mkdir(exist_ok=True)
     for old in OUT.glob("*.svg"):
         old.unlink()
-    for theme in THEMES:
-        (OUT / f"hero-{theme}.svg").write_text(render_hero(theme), encoding="utf-8")
-        (OUT / f"stats-{theme}.svg").write_text(render_stats(theme, weeks, languages, today), encoding="utf-8")
+    (OUT / "hero.svg").write_text(render_hero(), encoding="utf-8")
+    (OUT / "stats.svg").write_text(render_stats(weeks, languages, today), encoding="utf-8")
     print("languages:", ", ".join(f"{k}({v})" for k, v in sorted(languages.items(), key=lambda kv: -kv[1])))
 
 
