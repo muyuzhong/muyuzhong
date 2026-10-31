@@ -1,7 +1,7 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/hero-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="assets/hero-light.svg">
-  <img alt="cheathero — AI is the velocity; creativity is the vector." src="assets/hero-light.svg" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/hero-dark.svg?v=3">
+  <source media="(prefers-color-scheme: light)" srcset="assets/hero-light.svg?v=3">
+  <img alt="cheathero — AI is the velocity; creativity is the vector." src="assets/hero-light.svg?v=3" width="100%">
 </picture>
 
 <div align="center">
@@ -15,9 +15,9 @@
 ## ✦ Activity
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/stats-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="assets/stats-light.svg">
-  <img alt="GitHub contribution heatmap, streaks and language mix" src="assets/stats-light.svg" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/stats-dark.svg?v=3">
+  <source media="(prefers-color-scheme: light)" srcset="assets/stats-light.svg?v=3">
+  <img alt="GitHub contribution heatmap, streaks and language mix" src="assets/stats-light.svg?v=3" width="100%">
 </picture>
 
 <div align="center">

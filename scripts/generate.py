@@ -172,7 +172,7 @@ def render_hero(theme):
     lines = []
     for i, (indent, parts) in enumerate(code):
         spans = "".join(f'<tspan fill="{col}">{t.replace("&", "&amp;")}</tspan>' for t, col in parts)
-        lines.append(f'<text class="m rise" xml:space="preserve" x="{752 + indent * 22}" y="{128 + i * 30}" font-size="17" '
+        lines.append(f'<text class="m rise" xml:space="preserve" x="{752 + indent * 22}" y="{122 + i * 29}" font-size="17" '
                      f'style="animation-delay:{0.5 + i * 0.18:.2f}s">{spans}</text>')
 
     css = f"""
@@ -192,10 +192,10 @@ def render_hero(theme):
         d = f"M{-period} {y}"
         for i in range(int((W + 2 * period) / (period / 2)) + 1):
             d += f" Q{-period + period / 4 + i * period / 2:.0f} {y + (-amp if i % 2 == 0 else amp)} {-period + (i + 1) * period / 2:.0f} {y}"
-        return f'<path class="{cls}" d="{d}" fill="none" stroke="{colour}" stroke-width="2.5" stroke-linecap="round" opacity="{opacity}"/>'
+        return f'<path class="{cls}" d="{d}" fill="none" stroke="{colour}" stroke-width="3" stroke-linecap="round" opacity="{opacity}"/>'
 
-    waves = (wave(288, 9, 240, c["a1"], "w1", .55) + wave(298, 7, 320, c["a2"], "w2", .5)
-             + wave(308, 6, 200, c["a3"], "w3", .45))
+    waves = (wave(286, 11, 240, c["a1"], "w1", .55) + wave(298, 9, 320, c["a2"], "w2", .5)
+             + wave(309, 7, 200, c["a3"], "w3", .45))
     body = f"""<defs>
   <clipPath id="clip"><rect width="{W}" height="{H}" rx="22"/></clipPath>
   <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.1" fill="{c["dots"]}"/></pattern>
@@ -224,7 +224,7 @@ def render_hero(theme):
   <line x1="721" y1="82" x2="1135" y2="82" stroke="{c["border"]}"/>
 </g>
 {"".join(lines)}
-<rect class="cur" x="{752 + 2 * 11:.0f}" y="{128 + 5 * 30 - 15}" width="9" height="19" fill="{c["a1"]}" transform="translate(0 0)"/></g>"""
+<rect class="cur" x="{752 + 2 * 11:.0f}" y="{122 + 5 * 29 - 15}" width="9" height="19" fill="{c["a1"]}" transform="translate(0 0)"/></g>"""
     return frame(c, W, H, body, css, f"{NAME} — AI is the velocity; creativity is the vector.",
                  f"{NAME}'s profile banner: AI is the velocity, creativity is the vector.")
 
