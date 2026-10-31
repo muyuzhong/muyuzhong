@@ -1,7 +1,7 @@
-"""Render the profile as a Singularity-to-Prism Git spectrum, drawn from public contributions.
+"""Render the profile banner and live contribution stats as theme-aware SVGs.
 
-One spark of human creativity (the source / vector / first prompt) enters the AI prism
-(the runtime / velocity / lever) and refracts into multi-language commit trajectories.
+Outputs (assets/): hero-{dark,light}.svg  — animated intro banner
+                   stats-{dark,light}.svg — heatmap, streaks and language mix from real GitHub data
 
 Usage: GITHUB_TOKEN=... python scripts/generate.py [login]
 Only the standard library is used, so the workflow needs no install step.
@@ -9,59 +9,39 @@ Only the standard library is used, so the workflow needs no install step.
 
 import datetime as dt
 import json
-import math
 import os
-import subprocess
 import sys
 import time
 import urllib.request
 from pathlib import Path
 
 LOGIN = sys.argv[1] if len(sys.argv) > 1 else "muyuzhong"
+NAME = "cheathero"
 OUT = Path(__file__).resolve().parent.parent / "assets"
+SKIP_LANGS = {"CSS", "HTML", "Shell", "Dockerfile"}
 
-TITLE = "AI is the velocity; creativity is the vector."
-SUBTITLE = "AI is the runtime — the infinite lever of productivity. Creativity is the source — the origin of everything."
-CLOSING = "Before the next token, creativity writes the first prompt."
-COMMAND = "git log --graph --prism"
-
-W, H = 1200, 620
-SINGULARITY_X = 104    # the origin spark of creativity
-PRISM_LEFT = 232       # where the single incident beam enters the AI prism
-PRISM_CX = 266         # center axis of the crystalline AI prism
-PRISM_RIGHT = 300      # where the refracted spectral rays exit the prism
-TRACK_START = 356      # oldest week on the spectral timeline
-TRACK_END = 988        # newest week (HEAD) on the spectral timeline
-MAIN_Y = 424           # optical axis & main commit spine
-LANE_GAP = 32          # vertical separation between refracted language beams
-MAX_LANES = 6
-SKIP_LANGS = {"CSS", "HTML"}
-
-# GitHub's own surfaces + warm incandescent gold for Creativity + electric cyan for the AI Prism.
 THEMES = {
     "dark": dict(
-        bg="#0a0d12", surface="#0f141c", panel="#121822", border="#212834", rule="#1b222d",
-        fg="#e6edf3", sub="#9198a1", muted="#656d76", rail="#484f58",
-        gold="#f5b942", gold_bright="#fff5d6", gold_dim="#5c4314",
-        cyan="#39c5cf", cyan_bright="#7ce8f0", cyan_dim="#133d45",
-        hash="#d29922", branch="#3fb950",
-        prism_fill="#122332", prism_edge="#39c5cf",
-        lanes=["#ff7b72", "#58a6ff", "#d2a8ff", "#f0883e", "#3fb950", "#39c5cf"],
+        bg="#0d1117", card="#151b23", border="#2a313c", fg="#f0f6fc", sub="#9da7b3", muted="#6e7681",
+        a1="#8b7cf6", a2="#2dd4bf", a3="#f472b6", blob=0.30, dots="#30363d",
+        heat=["#1b212b", "#35307f", "#5146d1", "#7c6ff2", "#b8aeff"],
     ),
     "light": dict(
-        bg="#fbfcfd", surface="#f3f5f8", panel="#eef1f5", border="#d0d7de", rule="#e2e7ed",
-        fg="#1f2328", sub="#4d555e", muted="#656d76", rail="#8c959f",
-        gold="#b56200", gold_bright="#8a4600", gold_dim="#f7e3c4",
-        cyan="#086986", cyan_bright="#0550ae", cyan_dim="#cfeef5",
-        hash="#9a6700", branch="#1a7f37",
-        prism_fill="#e6f4f8", prism_edge="#086986",
-        lanes=["#cf222e", "#0969da", "#8250df", "#bc4c00", "#1a7f37", "#086986"],
+        bg="#ffffff", card="#f6f8fa", border="#d8dee4", fg="#1f2328", sub="#59636e", muted="#818b98",
+        a1="#6d4aff", a2="#0d9488", a3="#db2777", blob=0.22, dots="#d0d7de",
+        heat=["#eceef2", "#d3ccfb", "#a99af5", "#7b5cf0", "#4f2fd0"],
     ),
 }
 
+SANS = "-apple-system,BlinkMacSystemFont,'Segoe UI','Inter','PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif"
 MONO = "ui-monospace,'SFMono-Regular','JetBrains Mono',Menlo,Consolas,'DejaVu Sans Mono',monospace"
-SERIF = "Georgia,'Times New Roman','Songti SC','Noto Serif SC',serif"
-SANS = "-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Noto Sans CJK SC',sans-serif"
+
+LANG_COLORS = {
+    "TypeScript": "#3178c6", "JavaScript": "#f1e05a", "Python": "#3572a5", "Rust": "#dea584",
+    "Swift": "#f05138", "Astro": "#ff5a03", "Go": "#00add8", "Java": "#b07219", "C": "#8a8a8a",
+    "C++": "#f34b7d", "Kotlin": "#a97bff", "Vue": "#41b883", "Svelte": "#ff3e00", "Ruby": "#cc342d",
+}
+FALLBACK = ["#8b7cf6", "#2dd4bf", "#f472b6", "#fbbf24", "#60a5fa", "#fb923c"]
 
 
 # ── data ──────────────────────────────────────────────────────────────
@@ -90,7 +70,6 @@ CALENDAR = """query($login:String!){user(login:$login){contributionsCollection{
   contributionCalendar{weeks{contributionDays{date contributionCount}}}}}}"""
 
 # One window per quarter keeps every repository under 100 active days, so no nested paging is needed.
-# Fetching the top repository languages allows multi-language projects (e.g. Astro/Rust/JS) to refract into their own spectral lanes.
 BY_REPO = """query($login:String!,$from:DateTime!,$to:DateTime!){user(login:$login){
   contributionsCollection(from:$from,to:$to){commitContributionsByRepository(maxRepositories:100){
     repository{primaryLanguage{name} languages(first:5,orderBy:{field:SIZE,direction:DESC}){totalSize edges{size node{name}}}}
@@ -102,7 +81,7 @@ def fetch(token):
     weeks = [[(d["date"], d["contributionCount"]) for d in w["contributionDays"]] for w in cal]
     start = dt.date.fromisoformat(weeks[0][0][0])
     end = dt.date.fromisoformat(weeks[-1][-1][0]) + dt.timedelta(days=1)
-    by_language = {}
+    languages = {}
     cursor = start
     while cursor < end:
         upto = min(cursor + dt.timedelta(days=91), end)
@@ -111,403 +90,256 @@ def fetch(token):
             repo = entry["repository"]
             langs = repo.get("languages") or {}
             total_size = langs.get("totalSize") or 0
-            edges = langs.get("edges") or []
-            weights = []
-            for e in edges:
-                name = e["node"]["name"]
-                share = e["size"] / total_size if total_size else 0
-                if name not in SKIP_LANGS and share >= 0.03:
-                    weights.append((name, share))
-            if not weights and repo.get("primaryLanguage"):
-                primary = repo["primaryLanguage"]["name"]
-                if primary:
-                    weights.append((primary, 1.0))
-            for node in entry["contributions"]["nodes"]:
-                day = node["occurredAt"][:10]
-                commits = node["commitCount"]
-                for name, share in weights:
-                    days = by_language.setdefault(name, {})
-                    days[day] = days.get(day, 0) + max(1, round(commits * share))
+            weights = [(e["node"]["name"], e["size"] / total_size) for e in langs.get("edges") or []
+                       if total_size and e["node"]["name"] not in SKIP_LANGS and e["size"] / total_size >= 0.03]
+            if not weights and (repo.get("primaryLanguage") or {}).get("name"):
+                weights.append((repo["primaryLanguage"]["name"], 1.0))
+            commits = sum(n["commitCount"] for n in entry["contributions"]["nodes"])
+            for name, share in weights:
+                languages[name] = languages.get(name, 0) + max(1, round(commits * share))
         cursor = upto
-    return weeks, by_language
+    return weeks, languages
 
 
-def head_hash():
-    sha = os.environ.get("GITHUB_SHA")
-    if not sha:
-        try:
-            sha = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True,
-                                 cwd=OUT.parent).stdout.strip()
-        except OSError:
-            sha = ""
-    return (sha or "0" * 7)[:7]
+# ── stats ─────────────────────────────────────────────────────────────
+
+def streaks(days):
+    """days: chronological list of counts. Returns (longest, current); an empty today does not break the current streak."""
+    longest = run = 0
+    for n in days:
+        run = run + 1 if n else 0
+        longest = max(longest, run)
+    tail = days[:-1] if days and days[-1] == 0 else days
+    current = 0
+    for n in reversed(tail):
+        if not n:
+            break
+        current += 1
+    return longest, current
 
 
-# ── layout ────────────────────────────────────────────────────────────
-
-def build(weeks, by_language):
-    """Weeks indexed k=0 (newest/HEAD) to k=span-1 (oldest), plus one spectral lane per language."""
-    week_of = {date: k for k, w in enumerate(reversed(weeks)) for date, _ in w}
-    totals = [sum(n for _, n in w) for w in reversed(weeks)]
-
-    lanes = []
-    for lang, days in by_language.items():
-        counts = {}
-        for day, n in days.items():
-            if day in week_of:
-                counts[week_of[day]] = counts.get(week_of[day], 0) + n
-        if counts:
-            lanes.append(dict(name=lang.lower(), counts=counts, total=sum(counts.values()),
-                              newest=min(counts), oldest=max(counts)))
-    lanes.sort(key=lambda lane: -lane["total"])
-    lanes = lanes[:MAX_LANES]
-    for i, lane in enumerate(lanes):
-        lane["slot"] = (i // 2 + 1) * (-1 if i % 2 == 0 else 1)  # above, below, further above, …
-
-    oldest = max((lane["oldest"] for lane in lanes), default=0)
-    span = min(max(oldest + 4, 24), len(totals))
-    return totals[:span], lanes
+def levels(counts):
+    nonzero = sorted(n for n in counts if n)
+    if not nonzero:
+        return lambda n: 0
+    q = [nonzero[int(len(nonzero) * p)] for p in (0.25, 0.5, 0.75)]
+    return lambda n: 0 if n == 0 else 1 + sum(n > t for t in q)
 
 
-def week_x(k, span):
-    """Map week k (k=span-1 is oldest near the prism, k=0 is newest/HEAD on the right)."""
-    if span <= 1:
-        return TRACK_END
-    progress = (span - 1 - k) / (span - 1)
-    return TRACK_START + progress * (TRACK_END - TRACK_START)
+# ── shared chrome ─────────────────────────────────────────────────────
 
-
-def radius(n, top):
-    return 0 if n == 0 else 2.6 + 5.2 * math.sqrt(n / top)
-
-
-def refraction_paths(lane, span):
-    """Build (1) prism dispersion fan, (2) full carrier wave, and (3) active commit segment."""
-    slot = lane["slot"]
-    y = MAIN_Y + slot * LANE_GAP
-    exit_y = MAIN_Y + slot * 11.5
-    # Inside prism: from left entry (PRISM_LEFT, MAIN_Y) to right exit facet (PRISM_RIGHT, exit_y)
-    # Outside prism: smooth cubic bezier into horizontal lane y at TRACK_START
-    prism_fan = (
-        f"M{PRISM_LEFT} {MAIN_Y}"
-        f"L{PRISM_RIGHT} {exit_y:.1f}"
-        f"C{PRISM_RIGHT + 22} {exit_y:.1f} {TRACK_START - 26} {y} {TRACK_START} {y}"
-    )
-    x_old = week_x(lane["oldest"], span)
-    x_new = week_x(lane["newest"], span)
-    carrier = f"M{TRACK_START} {y}H{TRACK_END}"
-    motion_path = f"{prism_fan}H{x_new:.1f}"
-    active_track = f"M{x_old:.1f} {y}H{x_new:.1f}"
-    return prism_fan, carrier, motion_path, active_track, x_old, x_new, y
-
-
-def packet(path_id, colour, dur, begin, r=2.8):
-    """A photon/commit packet travelling forward along a path from Singularity/Prism toward HEAD."""
-    timing = f'dur="{dur:.1f}s" begin="{begin:.1f}s" repeatCount="indefinite"'
-    return (f'<circle r="{r}" fill="{colour}" opacity="0">'
-            f'<animateMotion {timing} keyPoints="0;1" keyTimes="0;1" calcMode="linear"><mpath href="#{path_id}"/></animateMotion>'
-            f'<animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.08;.9;1" {timing}/></circle>')
-
-
-# ── plate ─────────────────────────────────────────────────────────────
-
-def render(theme, totals, lanes, sha, today):
-    c = THEMES[theme]
-    span = len(totals)
-    total_commits = sum(totals)
-    top = max(totals + [n for lane in lanes for n in lane["counts"].values()]) or 1
-    date_str = f"{today:%b} {today.day}, {today.year}"
-
-    # 1. Optical Paths: Singularity -> AI Prism -> Multi-language Git Spectrum
-    incident_d = f"M{SINGULARITY_X} {MAIN_Y}H{PRISM_LEFT}"
-    main_d = f"M{PRISM_LEFT} {MAIN_Y}H{TRACK_END}"
-
-    carriers, branches, nodes, labels, packets = [], [], [], [], []
-
-    # Incident golden photon from Singularity into Prism
-    packets.append(packet("incident-ray", c["gold"], 1.8, 0.1, r=3.2))
-    # Main spine photon from Prism to HEAD
-    packets.append(packet("main-ray", c["cyan"], 6.5, 0.8, r=3.0))
-
-    for i, lane in enumerate(lanes):
-        colour = c["lanes"][i % len(c["lanes"])]
-        prism_fan, carrier_d, motion_d, active_d, _, x_new, y = refraction_paths(lane, span)
-        delay = 0.35 + i * 0.12
-
-        # 1) Refracted ray exiting the AI Prism + hidden full motion path for photons
-        carriers.append(
-            f'<path id="l{i}" d="{motion_d}" fill="none" stroke="none"/>'
-            f'<path d="{prism_fan}" fill="none" stroke="{colour}" stroke-width="1.9" stroke-opacity="0.78"/>'
-            f'<path d="{carrier_d}" fill="none" stroke="{colour}" stroke-width="1.2" '
-            f'stroke-dasharray="2 5" stroke-opacity="0.30"/>'
-        )
-        # 2) Solid active commit trajectory between oldest and newest commit weeks
-        branches.append(
-            f'<path class="br" d="{active_d}" pathLength="1" stroke="{colour}" '
-            f'style="animation-delay:{delay:.2f}s"/>'
-        )
-        # Weekly commit nodes along the language beam
-        for k, n in sorted(lane["counts"].items(), reverse=True):
-            wx = week_x(k, span)
-            r = radius(n, top)
-            node_delay = delay + 0.35 + (span - 1 - k) * 0.02
-            branches.append(
-                f'<circle class="pop" cx="{wx:.1f}" cy="{y}" r="{r:.1f}" fill="{colour}" '
-                f'style="animation-delay:{node_delay:.2f}s"/>'
-            )
-        # Active frontier pulse ring on recent branches
-        if lane["newest"] <= 2:
-            branches.append(
-                f'<circle class="tip" cx="{x_new:.1f}" cy="{y}" r="8.5" stroke="{colour}" '
-                f'style="animation-delay:{delay + 0.9:.2f}s"/>'
-            )
-        # Right-hand aligned spectrum legend (ample 140px column width, zero overlap)
-        labels.append(
-            f'<g class="fade" style="animation-delay:{delay + 0.55:.2f}s">'
-            f'<circle cx="{TRACK_END + 30}" cy="{y}" r="3.5" fill="{colour}"/>'
-            f'<text class="lb-name" x="{TRACK_END + 42}" y="{y + 4}" fill="{colour}">{lane["name"]}</text>'
-            f'<text class="lb-val" x="{W - 44}" y="{y + 4}">{lane["total"]}</text>'
-            f'</g>'
-        )
-        packets.append(packet(f"l{i}", colour, 5.2 + i * 0.7, 1.0 + i * 0.65, r=2.5))
-
-    # Main commit spine nodes (weekly totals across all repos)
-    for k, n in enumerate(totals):
-        wx = week_x(k, span)
-        r = radius(n, top)
-        node_delay = 0.3 + (span - 1 - k) * 0.02
-        if r:
-            paint = f'r="{r:.1f}" fill="{c["fg"]}"'
-        else:
-            paint = f'r="2.2" fill="{c["bg"]}" stroke="{c["rail"]}" stroke-width="1.2"'
-        nodes.append(
-            f'<circle class="pop" cx="{wx:.1f}" cy="{MAIN_Y}" {paint} '
-            f'style="animation-delay:{node_delay:.2f}s"/>'
-        )
-
-    # HEAD frontier badge at (TRACK_END, MAIN_Y)
-    labels.append(
-        f'<g class="fade" style="animation-delay:0.5s">'
-        f'<circle cx="{TRACK_END + 30}" cy="{MAIN_Y}" r="4" fill="{c["cyan"]}"/>'
-        f'<text class="lb-name" x="{TRACK_END + 42}" y="{MAIN_Y + 4}" fill="{c["cyan"]}" font-weight="700">HEAD</text>'
-        f'<text class="lb-val-hi" x="{W - 44}" y="{MAIN_Y + 4}">{total_commits:,}</text>'
-        f'</g>'
-    )
-
-    # Chronological month labels (reading naturally Left -> Right)
-    spans = {}
-    for k in range(span):
-        m_name = (today - dt.timedelta(weeks=k)).strftime("%b")
-        spans.setdefault(m_name, []).append(week_x(k, span))
-    months = [
-        f'<text class="mo" x="{sum(xs) / len(xs):.1f}" y="{MAIN_Y + 132}">{name}</text>'
-        for name, xs in spans.items() if len(xs) >= 2
-    ]
-
-    # Crystalline Prism geometry centered at (PRISM_CX, MAIN_Y)
-    prism_top = MAIN_Y - 96
-    prism_bot = MAIN_Y + 96
-    prism_outer = f"{PRISM_CX},{prism_top} {PRISM_RIGHT + 10},{MAIN_Y} {PRISM_CX},{prism_bot} {PRISM_LEFT - 10},{MAIN_Y}"
-    prism_inner = f"{PRISM_CX},{prism_top + 18} {PRISM_RIGHT},{MAIN_Y} {PRISM_CX},{prism_bot - 18} {PRISM_LEFT},{MAIN_Y}"
-
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="100%" height="{H}" role="img" aria-labelledby="t d">
-<title id="t">{TITLE}</title>
-<desc id="d">{SUBTITLE} {CLOSING} Live GitHub contribution spectrum across {span} weeks and {total_commits:,} contributions.</desc>
+def frame(c, w, h, body, css, title, desc):
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" width="{w}" height="{h}" role="img" aria-labelledby="t d">
+<title id="t">{title}</title>
+<desc id="d">{desc}</desc>
 <style>
-.mono{{font-family:{MONO}}}
-.serif{{font-family:{SERIF}}}
-.sans{{font-family:{SANS}}}
-.ps{{font-family:{MONO};font-size:14px;fill:{c["branch"]};font-weight:600}}
-.cmd{{font-family:{MONO};font-size:14px;fill:{c["fg"]}}}
-.seal{{font-family:{SANS};font-size:13px;fill:{c["sub"]};letter-spacing:1.5px;text-anchor:middle}}
-.meta{{font-family:{MONO};font-size:13px;fill:{c["muted"]};text-anchor:end}}
-.eyebrow-ai{{font-family:{MONO};font-size:12.5px;font-weight:700;fill:{c["cyan"]};letter-spacing:1.4px}}
-.eyebrow-cr{{font-family:{MONO};font-size:12.5px;font-weight:700;fill:{c["gold"]};letter-spacing:1.4px}}
-.h1-ai{{font-family:{MONO};font-size:40px;font-weight:700;fill:{c["fg"]};letter-spacing:-0.8px}}
-.h1-cr{{font-family:{SERIF};font-size:46px;font-style:italic;font-weight:400;fill:url(#gold-grad)}}
-.sub-line{{font-family:{SANS};font-size:15.5px;fill:{c["sub"]}}}
-.axiom{{font-family:{MONO};font-size:13px;fill:{c["muted"]}}}
-.ribbon-txt{{font-family:{MONO};font-size:12.5px;fill:{c["sub"]}}}
-.stage-title{{font-family:{MONO};font-size:13px;font-weight:700;letter-spacing:1.2px;text-anchor:middle}}
-.stage-sub{{font-family:{SERIF};font-size:14px;font-style:italic;fill:{c["sub"]};text-anchor:middle}}
-.stage-code{{font-family:{MONO};font-size:12px;fill:{c["muted"]};text-anchor:middle}}
-.leg-hd-l{{font-family:{MONO};font-size:11.5px;font-weight:600;fill:{c["muted"]};letter-spacing:0.8px;text-anchor:start}}
-.leg-hd-r{{font-family:{MONO};font-size:11.5px;font-weight:600;fill:{c["muted"]};letter-spacing:0.8px;text-anchor:end}}
-.lb-name{{font-family:{MONO};font-size:13px;text-anchor:start}}
-.lb-val{{font-family:{MONO};font-size:12.5px;fill:{c["muted"]};text-anchor:end}}
-.lb-val-hi{{font-family:{MONO};font-size:12.5px;fill:{c["fg"]};font-weight:600;text-anchor:end}}
-.mo{{font-family:{MONO};font-size:12px;fill:{c["muted"]};text-anchor:middle;text-transform:uppercase;letter-spacing:1px}}
-.ft{{font-family:{MONO};font-size:13.5px;fill:{c["muted"]}}}
-.br{{fill:none;stroke-width:2.4;stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:0;animation:draw 1.4s cubic-bezier(.5,0,.2,1) both}}
-.main-rail{{fill:none;stroke:{c["rail"]};stroke-width:2;stroke-dasharray:1;stroke-dashoffset:0;animation:draw 1.2s ease-out both}}
-.pop{{transform-box:fill-box;transform-origin:center;animation:pop .45s cubic-bezier(.3,1.5,.5,1) both}}
-.fade{{animation:fade .6s ease both}}
-.ring-gold{{fill:none;stroke:{c["gold"]};transform-box:fill-box;transform-origin:center;animation:pulse 3.2s ease-out infinite}}
-.ring-cyan{{fill:none;stroke:{c["cyan"]};transform-box:fill-box;transform-origin:center;animation:pulse 2.8s ease-out infinite}}
-.tip{{fill:none;stroke-width:1.4;transform-box:fill-box;transform-origin:center;animation:pulse 2.8s ease-out infinite}}
+text{{font-family:{SANS}}}
+.m{{font-family:{MONO}}}
 @keyframes fade{{from{{opacity:0}}to{{opacity:1}}}}
-@keyframes draw{{from{{stroke-dashoffset:1}}to{{stroke-dashoffset:0}}}}
-@keyframes pop{{from{{transform:scale(0)}}to{{transform:scale(1)}}}}
-@keyframes pulse{{0%{{opacity:.85;transform:scale(.65)}}100%{{opacity:0;transform:scale(2.3)}}}}
-@media (prefers-reduced-motion:reduce){{*{{animation:none!important}}.ring-gold,.ring-cyan,.tip{{display:none}}}}
+@keyframes rise{{from{{opacity:0;transform:translateY(8px)}}to{{opacity:1;transform:none}}}}
+{css}
+@media (prefers-reduced-motion:reduce){{*{{animation:none!important}}}}
 </style>
-
-<defs>
-  <linearGradient id="gold-grad" x1="0" y1="0" x2="1" y2="0">
-    <stop offset="0%" stop-color="{c["gold_bright"]}"/>
-    <stop offset="55%" stop-color="{c["gold"]}"/>
-    <stop offset="100%" stop-color="{c["fg"]}"/>
-  </linearGradient>
-  <linearGradient id="incident-grad" x1="0" y1="0" x2="1" y2="0">
-    <stop offset="0%" stop-color="{c["gold_bright"]}"/>
-    <stop offset="65%" stop-color="{c["gold"]}"/>
-    <stop offset="100%" stop-color="{c["cyan"]}"/>
-  </linearGradient>
-  <linearGradient id="prism-grad" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0%" stop-color="{c["cyan"]}" stop-opacity="0.28"/>
-    <stop offset="50%" stop-color="{c["prism_fill"]}" stop-opacity="0.75"/>
-    <stop offset="100%" stop-color="{c["gold"]}" stop-opacity="0.20"/>
-  </linearGradient>
-  <radialGradient id="glow-singularity" cx="50%" cy="50%" r="50%">
-    <stop offset="0%" stop-color="{c["gold"]}" stop-opacity="0.22"/>
-    <stop offset="100%" stop-color="{c["gold"]}" stop-opacity="0"/>
-  </radialGradient>
-  <radialGradient id="glow-prism" cx="50%" cy="50%" r="50%">
-    <stop offset="0%" stop-color="{c["cyan"]}" stop-opacity="0.20"/>
-    <stop offset="100%" stop-color="{c["cyan"]}" stop-opacity="0"/>
-  </radialGradient>
-</defs>
-
-<!-- Background Plate & Border -->
-<rect width="{W}" height="{H}" rx="14" fill="{c["bg"]}"/>
-<rect x="0.75" y="0.75" width="{W - 1.5}" height="{H - 1.5}" rx="13.25" fill="none" stroke="{c["border"]}" stroke-width="1.5"/>
-
-<!-- Ambient Optical Glows -->
-<circle cx="{SINGULARITY_X}" cy="{MAIN_Y}" r="120" fill="url(#glow-singularity)"/>
-<circle cx="{PRISM_CX}" cy="{MAIN_Y}" r="155" fill="url(#glow-prism)"/>
-
-<!-- 1. Top Telemetry Bar -->
-<text class="ps" x="44" y="36">~/{LOGIN}</text>
-<text class="cmd" x="{44 + (len(LOGIN) + 3) * 8.6:.1f}" y="36">❯ {COMMAND}</text>
-<text class="seal" x="{W / 2:.0f}" y="36"><tspan fill="{c["gold"]}">「</tspan> AI 即生产力 · 创造力即一切 <tspan fill="{c["gold"]}">」</tspan></text>
-<text class="meta" x="{W - 44}" y="36"><tspan fill="{c["hash"]}">commit {sha}</tspan> (<tspan fill="{c["cyan"]}" font-weight="700">HEAD</tspan> → <tspan fill="{c["branch"]}" font-weight="700">main</tspan>) · {date_str}</text>
-<line x1="44" y1="54" x2="{W - 44}" y2="54" stroke="{c["rule"]}" stroke-width="1"/>
-
-<!-- 2. Dual-Axis Philosophical Manifesto -->
-<!-- Left Column: 01 // AI IS THE VELOCITY (Monospace / Runtime / Productivity) -->
-<g id="manifesto-ai">
-  <rect x="44" y="68" width="528" height="156" rx="10" fill="{c["surface"]}" stroke="{c["border"]}" stroke-width="1"/>
-  <rect x="64" y="88" width="8" height="8" rx="1.5" fill="{c["cyan"]}"/>
-  <text class="eyebrow-ai" x="80" y="96">01 // THE RUNTIME · INFINITE EXECUTION</text>
-  <text class="h1-ai" x="64" y="142">AI IS THE VELOCITY<tspan fill="{c["cyan"]}">.</tspan></text>
-  <text class="sub-line" x="64" y="174">AI is the <tspan fill="{c["fg"]}" font-weight="600">runtime</tspan> &amp; <tspan fill="{c["cyan"]}" font-weight="600">lever</tspan> — turning intent into throughput.</text>
-  <text class="axiom" x="64" y="202"><tspan fill="{c["cyan"]}">▸</tspan> Predicts the next token · scales productivity to infinity.</text>
-</g>
-
-<!-- Center Coupling Node (Velocity × Vector) -->
-<g id="manifesto-coupling">
-  <line x1="{W / 2:.0f}" y1="86" x2="{W / 2:.0f}" y2="206" stroke="{c["border"]}" stroke-width="1" stroke-dasharray="3 4"/>
-  <circle cx="{W / 2:.0f}" cy="146" r="14" fill="{c["panel"]}" stroke="{c["border"]}" stroke-width="1.2"/>
-  <text class="mono" x="{W / 2:.0f}" y="151" font-size="15" fill="{c["sub"]}" text-anchor="middle">×</text>
-</g>
-
-<!-- Right Column: 02 // Creativity is the vector (Editorial Serif Italic / Source / Everything) -->
-<g id="manifesto-creativity">
-  <rect x="628" y="68" width="528" height="156" rx="10" fill="{c["surface"]}" stroke="{c["border"]}" stroke-width="1"/>
-  <polygon points="652,86 654,90 658,92 654,94 652,98 650,94 646,92 650,90" fill="{c["gold"]}"/>
-  <text class="eyebrow-cr" x="666" y="96">02 // THE SOURCE · SOVEREIGN GENESIS</text>
-  <text class="h1-cr" x="648" y="144">Creativity is the vector.</text>
-  <text class="sub-line" x="648" y="174">Creativity is the <tspan fill="{c["gold"]}" font-weight="600">source</tspan> — the direction &amp; meaning of <tspan fill="{c["fg"]}" font-weight="600">everything</tspan>.</text>
-  <text class="axiom" x="648" y="202"><tspan fill="{c["gold"]}">✦</tspan> Writes the first prompt · defines what deserves to exist.</text>
-</g>
-
-<!-- 3. Telemetry Bridge Bar -->
-<rect x="44" y="238" width="{W - 88}" height="30" rx="6" fill="{c["panel"]}" stroke="{c["rule"]}" stroke-width="1"/>
-<circle cx="62" cy="253" r="4" fill="{c["gold"]}"/>
-<text class="ribbon-txt" x="74" y="257"><tspan fill="{c["gold"]}" font-weight="600">SOURCE(1)</tspan> : THE FIRST PROMPT</text>
-<text class="ribbon-txt" x="{W / 2 - 20:.0f}" y="257" text-anchor="middle" fill="{c["cyan"]}">───► [ AI PRISM : RUNTIME REFRACTION ] ───►</text>
-<text class="ribbon-txt" x="{W - 60}" y="257" text-anchor="end">PROOF : <tspan fill="{c["branch"]}" font-weight="700">{total_commits:,} CONTRIBUTIONS(+)</tspan> · {len(lanes)} LANGUAGES</text>
-
-<!-- 4. Singularity -> AI Prism -> Git Spectrum Stage -->
-<!-- Subtle horizontal optical axis -->
-<line x1="44" y1="{MAIN_Y}" x2="{TRACK_END}" y2="{MAIN_Y}" stroke="{c["rule"]}" stroke-width="1" stroke-dasharray="2 6"/>
-
-<!-- Stage I: THE SINGULARITY (Creativity / The Spark) -->
-<g id="singularity">
-  <text class="stage-title" x="{SINGULARITY_X}" y="338" fill="{c["gold"]}">THE SPARK</text>
-  <text class="stage-sub" x="{SINGULARITY_X}" y="356">creativity</text>
-  <circle cx="{SINGULARITY_X}" cy="{MAIN_Y}" r="36" fill="none" stroke="{c["gold"]}" stroke-width="1" stroke-dasharray="2 5" stroke-opacity="0.5"/>
-  <circle class="ring-gold" cx="{SINGULARITY_X}" cy="{MAIN_Y}" r="15" stroke-width="1.6"/>
-  <circle class="ring-gold" cx="{SINGULARITY_X}" cy="{MAIN_Y}" r="22" stroke-width="1.2" style="animation-delay:1.4s"/>
-  <line x1="{SINGULARITY_X - 22}" y1="{MAIN_Y}" x2="{SINGULARITY_X + 22}" y2="{MAIN_Y}" stroke="{c["gold"]}" stroke-width="1.2" stroke-opacity="0.7"/>
-  <line x1="{SINGULARITY_X}" y1="{MAIN_Y - 22}" x2="{SINGULARITY_X}" y2="{MAIN_Y + 22}" stroke="{c["gold"]}" stroke-width="1.2" stroke-opacity="0.7"/>
-  <circle cx="{SINGULARITY_X}" cy="{MAIN_Y}" r="7" fill="{c["gold_bright"]}" stroke="{c["gold"]}" stroke-width="2.5"/>
-  <text class="stage-code" x="{SINGULARITY_X}" y="{MAIN_Y + 58}">1st prompt</text>
-  <text class="stage-code" x="{SINGULARITY_X}" y="{MAIN_Y + 75}" fill="{c["gold"]}">vector(1)</text>
-</g>
-
-<!-- Incident Laser Beam (Intent -> Compute) -->
-<line x1="{SINGULARITY_X + 7}" y1="{MAIN_Y}" x2="{PRISM_LEFT}" y2="{MAIN_Y}" stroke="{c["gold"]}" stroke-width="6" stroke-opacity="0.18"/>
-<path id="incident-ray" d="{incident_d}" fill="none" stroke="url(#incident-grad)" stroke-width="2.6"/>
-
-<!-- Stage II: THE AI PRISM (Runtime Amplifier) -->
-<g id="ai-prism">
-  <text class="stage-title" x="{PRISM_CX}" y="308" fill="{c["cyan"]}">AI PRISM</text>
-  <text class="stage-code" x="{PRISM_CX}" y="324">runtime × velocity</text>
-  <!-- Outer and inner crystalline diamond facets -->
-  <polygon points="{prism_outer}" fill="url(#prism-grad)" stroke="{c["prism_edge"]}" stroke-width="1.8"/>
-  <polygon points="{prism_inner}" fill="none" stroke="{c["cyan"]}" stroke-width="1" stroke-opacity="0.45" stroke-dasharray="3 3"/>
-  <line x1="{PRISM_CX}" y1="{prism_top}" x2="{PRISM_CX}" y2="{prism_bot}" stroke="{c["cyan"]}" stroke-width="1" stroke-opacity="0.35"/>
-  <circle class="ring-cyan" cx="{PRISM_LEFT}" cy="{MAIN_Y}" r="7" stroke-width="1.4"/>
-  <circle cx="{PRISM_LEFT}" cy="{MAIN_Y}" r="3.5" fill="{c["gold_bright"]}" stroke="{c["cyan"]}" stroke-width="1.5"/>
-  <text class="stage-code" x="{PRISM_CX}" y="{prism_bot + 22}" fill="{c["cyan"]}">scales execution</text>
-</g>
-
-<!-- Stage III: Refracted Multi-Language Git Spectrum -->
-<path id="main-ray" class="main-rail" d="{main_d}" pathLength="1"/>
-{"".join(carriers)}
-{"".join(branches)}
-{"".join(nodes)}
-{"".join(packets)}
-
-<!-- Frontier Divider & Right-Hand Spectrum Legend -->
-<line x1="{TRACK_END + 14}" y1="308" x2="{TRACK_END + 14}" y2="536" stroke="{c["rule"]}" stroke-width="1" stroke-dasharray="2 4"/>
-<text class="leg-hd-l" x="{TRACK_END + 26}" y="302">SPECTRUM</text>
-<text class="leg-hd-r" x="{W - 44}" y="302">COMMITS</text>
-{"".join(labels)}
-
-<!-- Chronological Month Axis -->
-{"".join(months)}
-
-<!-- 5. Footer Bar -->
-<line x1="44" y1="572" x2="{W - 44}" y2="572" stroke="{c["rule"]}" stroke-width="1"/>
-<text class="ft" x="44" y="598">{span} weeks observed · <tspan fill="{c["branch"]}" font-weight="600">{total_commits:,} contributions(+)</tspan> · <tspan fill="{c["gold"]}">1 spark</tspan> → <tspan fill="{c["cyan"]}">∞ throughput</tspan></text>
-<text class="ft" x="{W - 44}" y="598" text-anchor="end" fill="{c["sub"]}">{CLOSING}</text>
+{body}
 </svg>
 """
 
+
+# ── hero ──────────────────────────────────────────────────────────────
+
+def render_hero(theme):
+    c = THEMES[theme]
+    W, H = 1200, 320
+    chips = ["TypeScript", "Python", "Rust", "Swift", "Astro"]
+    chip_svg, x = [], 64
+    for i, name in enumerate(chips):
+        w = len(name) * 7.6 + 26
+        chip_svg.append(
+            f'<g class="rise" style="animation-delay:{0.7 + i * 0.07:.2f}s">'
+            f'<rect x="{x:.1f}" y="236" width="{w:.1f}" height="30" rx="15" fill="{c["card"]}" stroke="{c["border"]}"/>'
+            f'<circle cx="{x + 14:.1f}" cy="251" r="3.5" fill="{LANG_COLORS.get(name, c["a1"])}"/>'
+            f'<text x="{x + 24:.1f}" y="256" font-size="13" font-weight="500" fill="{c["sub"]}">{name}</text></g>')
+        x += w + 10
+
+    code = [  # (indent, [(text, colour)])
+        (0, [("const ", c["a3"]), (NAME, c["fg"]), (" = {", c["muted"])]),
+        (1, [("lever", c["a2"]), (": ", c["muted"]), ('"AI"', c["a1"]), (",", c["muted"])]),
+        (1, [("vector", c["a2"]), (": ", c["muted"]), ('"creativity"', c["a1"]), (",", c["muted"])]),
+        (1, [("ships", c["a2"]), (": ", c["muted"]), ('["boardcast", "rea"]', c["a1"]), (",", c["muted"])]),
+        (1, [("shipping", c["a2"]), (": ", c["muted"]), ("true", c["a3"]), (",", c["muted"])]),
+        (0, [("};", c["muted"])]),
+    ]
+    lines = []
+    for i, (indent, parts) in enumerate(code):
+        spans = "".join(f'<tspan fill="{col}">{t.replace("&", "&amp;")}</tspan>' for t, col in parts)
+        lines.append(f'<text class="m rise" xml:space="preserve" x="{752 + indent * 22}" y="{128 + i * 30}" font-size="17" '
+                     f'style="animation-delay:{0.5 + i * 0.18:.2f}s">{spans}</text>')
+
+    css = f"""
+.rise{{animation:rise .7s cubic-bezier(.2,.8,.2,1) both}}
+.b1{{animation:d1 14s ease-in-out infinite alternate}}
+.b2{{animation:d2 17s ease-in-out infinite alternate}}
+.b3{{animation:d3 19s ease-in-out infinite alternate}}
+@keyframes d1{{to{{transform:translate(90px,40px)}}}}
+@keyframes d2{{to{{transform:translate(-110px,-30px)}}}}
+@keyframes d3{{to{{transform:translate(-60px,50px)}}}}
+.dot{{animation:ping 2.4s ease-out infinite;transform-box:fill-box;transform-origin:center}}
+@keyframes ping{{0%{{opacity:.7;transform:scale(1)}}100%{{opacity:0;transform:scale(3)}}}}
+.cur{{animation:blink 1.1s steps(1) infinite}}
+@keyframes blink{{50%{{opacity:0}}}}
+"""
+    body = f"""<defs>
+  <clipPath id="clip"><rect width="{W}" height="{H}" rx="22"/></clipPath>
+  <radialGradient id="g1"><stop offset="0" stop-color="{c["a1"]}" stop-opacity="{c["blob"]}"/><stop offset="1" stop-color="{c["a1"]}" stop-opacity="0"/></radialGradient>
+  <radialGradient id="g2"><stop offset="0" stop-color="{c["a2"]}" stop-opacity="{c["blob"]}"/><stop offset="1" stop-color="{c["a2"]}" stop-opacity="0"/></radialGradient>
+  <radialGradient id="g3"><stop offset="0" stop-color="{c["a3"]}" stop-opacity="{c["blob"] * 0.8:.2f}"/><stop offset="1" stop-color="{c["a3"]}" stop-opacity="0"/></radialGradient>
+  <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.1" fill="{c["dots"]}"/></pattern>
+</defs>
+<g clip-path="url(#clip)">
+  <rect width="{W}" height="{H}" fill="{c["bg"]}"/>
+  <rect width="{W}" height="{H}" fill="url(#dots)" opacity=".7"/>
+  <circle class="b1" cx="250" cy="90" r="300" fill="url(#g1)"/>
+  <circle class="b2" cx="1000" cy="260" r="320" fill="url(#g2)"/>
+  <circle class="b3" cx="620" cy="360" r="260" fill="url(#g3)"/>
+</g>
+<rect x=".5" y=".5" width="{W - 1}" height="{H - 1}" rx="21.5" fill="none" stroke="{c["border"]}"/>
+
+<g class="rise">
+  <rect x="64" y="46" width="132" height="28" rx="14" fill="{c["card"]}" stroke="{c["border"]}"/>
+  <circle cx="82" cy="60" r="4" fill="{c["a2"]}"/><circle class="dot" cx="82" cy="60" r="4" fill="{c["a2"]}"/>
+  <text x="94" y="65" font-size="12" font-weight="600" letter-spacing="1.4" fill="{c["sub"]}">HELLO, WORLD</text>
+</g>
+<text class="rise" x="60" y="152" font-size="86" font-weight="800" letter-spacing="-2.5" fill="{c["fg"]}" style="animation-delay:.1s">{NAME}<tspan fill="{c["a1"]}">.</tspan></text>
+<text class="rise" x="64" y="192" font-size="23" fill="{c["sub"]}" style="animation-delay:.25s">AI is the <tspan font-weight="700" fill="{c["fg"]}">velocity</tspan>. Creativity is the <tspan font-weight="700" fill="{c["fg"]}">vector</tspan>.</text>
+<text class="rise" x="64" y="218" font-size="15" fill="{c["muted"]}" style="animation-delay:.35s">AI 即生产力，创造力即一切</text>
+{"".join(chip_svg)}
+
+<g class="rise" style="animation-delay:.3s">
+  <rect x="720" y="40" width="416" height="240" rx="14" fill="{c["card"]}" stroke="{c["border"]}"/>
+  <circle cx="744" cy="62" r="5.5" fill="#ff5f57"/><circle cx="764" cy="62" r="5.5" fill="#febc2e"/><circle cx="784" cy="62" r="5.5" fill="#28c840"/>
+  <text class="m" x="928" y="66" font-size="12" text-anchor="middle" fill="{c["muted"]}">me.ts</text>
+  <line x1="721" y1="82" x2="1135" y2="82" stroke="{c["border"]}"/>
+</g>
+{"".join(lines)}
+<rect class="cur" x="{752 + 2 * 11:.0f}" y="{128 + 5 * 30 - 15}" width="9" height="19" fill="{c["a1"]}" transform="translate(0 0)"/>"""
+    return frame(c, W, H, body, css, f"{NAME} — AI is the velocity; creativity is the vector.",
+                 f"{NAME}'s profile banner: AI is the velocity, creativity is the vector.")
+
+
+# ── stats ─────────────────────────────────────────────────────────────
+
+def render_stats(theme, weeks, languages, today):
+    c = THEMES[theme]
+    W = 1200
+    flat = [n for w in weeks for _, n in w]
+    total = sum(flat)
+    active = sum(1 for n in flat if n)
+    longest, current = streaks(flat)
+    level = levels(flat)
+
+    tiles = [("Contributions", f"{total:,}", "last 12 months", c["a1"]),
+             ("Active days", f"{active}", f"of {len(flat)} days", c["a2"]),
+             ("Longest streak", f"{longest}", "days in a row", c["a3"]),
+             ("Current streak", f"{current}", "days", c["a1"])]
+    tw, gap = 268, 16
+    tile_svg = []
+    for i, (label, value, note, col) in enumerate(tiles):
+        x = 40 + i * (tw + gap)
+        tile_svg.append(
+            f'<g class="rise" style="animation-delay:{i * 0.08:.2f}s">'
+            f'<rect x="{x}" y="72" width="{tw}" height="96" rx="14" fill="{c["card"]}" stroke="{c["border"]}"/>'
+            f'<rect x="{x + 20}" y="86" width="22" height="4" rx="2" fill="{col}"/>'
+            f'<text x="{x + 20}" y="124" font-size="34" font-weight="800" fill="{c["fg"]}">{value}</text>'
+            f'<text x="{x + 20 + 14 + len(value) * 20:.0f}" y="124" font-size="13" fill="{c["muted"]}">{note}</text>'
+            f'<text x="{x + 20}" y="152" font-size="13" font-weight="600" fill="{c["sub"]}">{label}</text></g>')
+
+    # heatmap
+    x0, y0, pitch, cell = 74, 224, 20, 16
+    cells, months, last_col = [], [], -9
+    for col, week in enumerate(weeks):
+        d0 = dt.date.fromisoformat(week[0][0])
+        if (col == 0 or d0.month != dt.date.fromisoformat(weeks[col - 1][0][0]).month) and col - last_col >= 3:
+            months.append(f'<text x="{x0 + col * pitch}" y="{y0 - 12}" font-size="12" fill="{c["muted"]}">{d0:%b}</text>')
+            last_col = col
+        for row, (date, n) in enumerate(week):
+            dow = (dt.date.fromisoformat(date).weekday() + 1) % 7  # Sunday-first like GitHub
+            lv = level(n)
+            cells.append(f'<rect class="c" x="{x0 + col * pitch}" y="{y0 + dow * pitch}" width="{cell}" height="{cell}" '
+                         f'rx="4" fill="{c["heat"][lv]}" style="animation-delay:{col * 0.014:.3f}s"><title>{date}: {n}</title></rect>')
+    days = "".join(f'<text x="40" y="{y0 + r * pitch + 12}" font-size="11" fill="{c["muted"]}">{n}</text>'
+                   for r, n in ((1, "Mon"), (3, "Wed"), (5, "Fri")))
+    ly = y0 + 7 * pitch + 6
+    legend = "".join(f'<rect x="{1040 + i * 20}" y="{ly}" width="14" height="14" rx="4" fill="{col}"/>'
+                     for i, col in enumerate(c["heat"]))
+    legend += (f'<text x="{1040 - 8}" y="{ly + 11}" font-size="12" text-anchor="end" fill="{c["muted"]}">Less</text>'
+               f'<text x="{1040 + 5 * 20 + 6}" y="{ly + 11}" font-size="12" fill="{c["muted"]}">More</text>')
+
+    # language mix
+    all_total = sum(languages.values()) or 1
+    langs = [kv for kv in sorted(languages.items(), key=lambda kv: -kv[1])[:6] if kv[1] / all_total >= 0.01]
+    lang_total = sum(n for _, n in langs) or 1
+    by = ly + 54
+    bar_w, bx, seg = W - 80, 40, []
+    leg, cursor = [], 0.0
+    step = (W - 80) / max(len(langs), 1)
+    for i, (name, n) in enumerate(langs):
+        col = LANG_COLORS.get(name, FALLBACK[i % len(FALLBACK)])
+        share = n / lang_total
+        w = bar_w * share
+        seg.append(f'<rect x="{bx + cursor:.1f}" y="{by}" width="{max(w - 3, 2):.1f}" height="12" fill="{col}"/>')
+        cursor += w
+        lx = 40 + i * step
+        leg.append(f'<circle cx="{lx + 5:.0f}" cy="{by + 40}" r="5" fill="{col}"/>'
+                   f'<text x="{lx + 18:.0f}" y="{by + 45}" font-size="14" font-weight="600" fill="{c["fg"]}">{name}'
+                   f'<tspan dx="7" font-weight="400" fill="{c["muted"]}">{share * 100:.1f}%</tspan></text>')
+    H = by + 76
+
+    css = f"""
+.rise{{animation:rise .6s cubic-bezier(.2,.8,.2,1) both}}
+.c{{animation:fade .5s ease both}}
+.bar{{animation:grow 1.2s cubic-bezier(.2,.8,.2,1) .4s both;transform-origin:{bx}px 0}}
+@keyframes grow{{from{{transform:scaleX(0)}}to{{transform:scaleX(1)}}}}
+"""
+    body = f"""<defs><clipPath id="bar"><rect x="{bx}" y="{by}" width="{bar_w}" height="12" rx="6"/></clipPath></defs>
+<rect width="{W}" height="{H}" rx="22" fill="{c["bg"]}"/>
+<rect x=".5" y=".5" width="{W - 1}" height="{H - 1}" rx="21.5" fill="none" stroke="{c["border"]}"/>
+<text x="40" y="46" font-size="13" font-weight="700" letter-spacing="1.6" fill="{c["sub"]}">ACTIVITY</text>
+<text x="{W - 40}" y="46" font-size="12" text-anchor="end" fill="{c["muted"]}">updated {today:%Y-%m-%d} · live from GitHub</text>
+{"".join(tile_svg)}
+{"".join(months)}{days}
+{"".join(cells)}
+{legend}
+<text x="40" y="{by - 16}" font-size="13" font-weight="700" letter-spacing="1.6" fill="{c["sub"]}">LANGUAGES</text>
+<rect x="{bx}" y="{by}" width="{bar_w}" height="12" rx="6" fill="{c["card"]}"/>
+<g clip-path="url(#bar)"><g class="bar">{"".join(seg)}</g></g>
+{"".join(leg)}"""
+    return frame(c, W, H, body, css, f"{NAME}'s GitHub activity",
+                 f"{total:,} contributions across {active} active days; longest streak {longest} days.")
+
+
+# ── main ──────────────────────────────────────────────────────────────
 
 def main():
     cache_file = os.environ.get("GITHUB_CACHE_JSON")
     if cache_file and Path(cache_file).exists():
         data = json.loads(Path(cache_file).read_text(encoding="utf-8"))
-        weeks, by_language = data["weeks"], data["by_language"]
+        weeks, languages = data["weeks"], data["languages"]
     else:
         token = os.environ.get("GITHUB_TOKEN")
         if not token:
             sys.exit("GITHUB_TOKEN is not set")
-        weeks, by_language = fetch(token)
+        weeks, languages = fetch(token)
+        if cache_file:
+            Path(cache_file).write_text(json.dumps({"weeks": weeks, "languages": languages}), encoding="utf-8")
 
-    totals, lanes = build(weeks, by_language)
     today = dt.date.fromisoformat(weeks[-1][-1][0])
-    sha = head_hash()
-
     OUT.mkdir(exist_ok=True)
     for old in OUT.glob("*.svg"):
         old.unlink()
     for theme in THEMES:
-        (OUT / f"log-{theme}.svg").write_text(render(theme, totals, lanes, sha, today), encoding="utf-8")
-    print(f"{len(totals)} weeks, lanes: " + ", ".join(f"{l['name']}({l['total']}, slot {l['slot']})" for l in lanes))
+        (OUT / f"hero-{theme}.svg").write_text(render_hero(theme), encoding="utf-8")
+        (OUT / f"stats-{theme}.svg").write_text(render_stats(theme, weeks, languages, today), encoding="utf-8")
+    print("languages:", ", ".join(f"{k}({v})" for k, v in sorted(languages.items(), key=lambda kv: -kv[1])))
 
 
 if __name__ == "__main__":
