@@ -208,10 +208,9 @@ def render_hero():
 
     line_a, end_a = typed('$ echo "AI is the velocity; creativity is the vector."', 48, 266, 1.0, FG)
     line_a = line_a.replace('<tspan class="t" style="animation-delay:1.00s">$', f'<tspan class="t" fill="{ACCENT}" style="animation-delay:1.00s">$', 1)
-    line_b, end_b = typed("> AI 即生产力，创造力即一切", 48, 292, end_a + 0.2, DIM, 0.06,
-                          extra=f'<tspan class="cur" style="animation-delay:{end_a + 0.2 + 15 * 0.06:.2f}s" fill="{ACCENT}"> █</tspan>')
-    chips = "  ".join(f'[{n}]' for n in ("TypeScript", "Python", "Rust", "Swift", "Astro"))
-    chips_svg = (f'<text class="m rise" x="48" y="318" font-size="13" fill="{DIM}" style="animation-delay:.9s">{chips}</text>')
+    greeting = "> hey, I'm cheathero — nice to meet you."
+    line_b, end_b = typed(greeting, 48, 294, end_a + 0.2, DIM, 0.035,
+                          extra=f'<tspan class="cur" style="animation-delay:{end_a + 0.2 + len(greeting) * 0.035:.2f}s" fill="{ACCENT}"> █</tspan>')
 
     css = """
 .f{animation:shimmer 1.5s ease-in-out infinite}
@@ -228,7 +227,7 @@ def render_hero():
             + border(f"{NAME}@github", "● online", H)
             + "".join(rows) + "".join(field)
             + f'<text class="m" x="{x0}" y="{y0 - 14}" font-size="12" fill="{DIM}">// signal<tspan fill="{FAINT}"> · decode me</tspan></text>'
-            + line_a + line_b + chips_svg)
+            + line_a + line_b)
     return svg(H, f"{NAME} — AI is the velocity; creativity is the vector.",
                f"ASCII terminal banner for {NAME}: AI is the velocity, creativity is the vector.", css, body)
 

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" font-size="14" viewBox="0 0 1200 136" width="1200" height="136" role="img" aria-labelledby="t d">
+<title id="t">cheathero's engineering focus and languages</title>
+<desc id="d">Focus: Agent Harnesses, Infra, Context Engineering. Languages: Go, TypeScript, Python.</desc>
+<style>
+text{font-family:ui-monospace,'SFMono-Regular','JetBrains Mono',Menlo,Consolas,'DejaVu Sans Mono','Noto Sans Mono CJK SC',monospace}
+.m{white-space:pre}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.rise{animation:rise .6s cubic-bezier(.2,.8,.2,1) both}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+<rect width="1200" height="136" rx="14" fill="#0a0c0a"/>
+<g id="frame">
+<text class="m" x="14" y="22" textLength="1168" fill="#2b322b">┌─[<tspan fill="#4ade80"> stack ]</tspan>─────────────────────────────────────────────────────────────────────────────────────────────────────────────<tspan fill="#7d867d">[ agent · infra ]─┐</tspan></text>
+<text class="m" x="14" y="44" fill="#2b322b">│</text><text class="m" x="1173.2" y="44" fill="#2b322b">│</text>
+<text class="m" x="14" y="64" fill="#2b322b">│</text><text class="m" x="1173.2" y="64" fill="#2b322b">│</text>
+<text class="m" x="14" y="84" fill="#2b322b">│</text><text class="m" x="1173.2" y="84" fill="#2b322b">│</text>
+<text class="m" x="14" y="104" fill="#2b322b">│</text><text class="m" x="1173.2" y="104" fill="#2b322b">│</text>
+<text class="m" x="14" y="124" textLength="1168" fill="#2b322b">└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘</text>
+</g>
+<g id="divider" fill="#2b322b">
+<text class="m" x="612" y="54">│</text>
+<text class="m" x="612" y="74">│</text>
+<text class="m" x="612" y="94">│</text>
+</g>
+<g id="focus" class="rise" style="animation-delay:.08s">
+<text class="m" xml:space="preserve" x="48" y="58" font-size="13" fill="#7d867d">// focus</text>
+<text class="m" xml:space="preserve" x="48" y="88" font-size="18" font-weight="500"><tspan fill="#e8ece8">Agent Harnesses</tspan><tspan fill="#4ade80"> · </tspan><tspan fill="#e8ece8">Infra</tspan><tspan fill="#4ade80"> · </tspan><tspan fill="#e8ece8">Context Engineering</tspan></text>
+</g>
+<g id="languages" class="rise" style="animation-delay:.16s">
+<text class="m" xml:space="preserve" x="648" y="58" font-size="13" fill="#7d867d">// languages</text>
+<text class="m" xml:space="preserve" x="648" y="88" font-size="18" font-weight="500"><tspan fill="#e8ece8">Go</tspan><tspan fill="#4ade80"> · </tspan><tspan fill="#e8ece8">TypeScript</tspan><tspan fill="#4ade80"> · </tspan><tspan fill="#e8ece8">Python</tspan></text>
+</g>
+</svg>
